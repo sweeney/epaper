@@ -108,13 +108,40 @@ With the overlay set, only `/dev/spidev0.0` exists (`spidev0.1` disappears) and
   this by sleeping the full 40 s timeout. **We will return an error instead** —
   silently sleeping 40 s is worse than failing.
 
-  **Measured at M5, with the panel idle: BUSY reads 0 — busy.** The panel had
-  been sitting in `DSLP` for hours, and with the pull-up enabled a low reading
-  means something is actively holding the line down, i.e. the panel asserts
-  BUSY while asleep. Consequence for the driver: **never wait for BUSY before
-  the reset.** The hardware reset comes first, unconditionally, and BUSY is
-  only meaningful after `PON`. The vendor's sequence happens to do this
-  already; ours does it deliberately.
+  **Characterised at M7** (`hwtest.TestBusyProbe`), after two runs disagreed
+  and a one-off reading turned out to be misleading:
+
+  | Panel state | BUSY |
+  |---|---|
+  | Idle, including hours in `DSLP` | **1 — ready**, steady and repeatable |
+  | While `RESET` is asserted | **0 — busy** |
+  | Up to ~30 ms after `RESET` is released | still 0, then settles to 1 |
+
+  An earlier note here claimed the panel asserts BUSY while asleep. It does
+  not. That reading was taken microseconds after first claiming the GPIO lines,
+  while the panel was still coming out of a reset it had been held in; the
+  probe above reproduces it on demand and shows the recovery.
+
+  Two consequences, and the second is the uncomfortable one:
+
+  1. **Never wait for BUSY before the reset.** BUSY reads busy during reset,
+     so a wait beforehand is at best meaningless. The reset comes first,
+     unconditionally.
+  2. **An idle panel and a disconnected BUSY line read identically** — both 1.
+     There is therefore *no* way to tell them apart by reading the line, and
+     §2.3's original plan of "return an error if BUSY is high on entry" cannot
+     work: it would fire on every healthy refresh. What distinguishes them is
+     **elapsed time**: a real full refresh takes 25.4 s, so a refresh that
+     reports complete in under a second is a disconnected line. That check is
+     `jd79668.DefaultMinRefreshTime`, and it is why the driver times the wait
+     instead of interrogating the line.
+
+  This also sharpens **§9.3**. If the panel does not assert BUSY the instant it
+  is told to do something, then a `WaitReady` issued too soon after `PON` could
+  return immediately on a *stale* ready. The vendor's 300 ms per-command sleep
+  would mask exactly that. So the delays may be load-bearing for a reason the
+  vendor never wrote down, and §9.3's experiment should watch for a refresh
+  that returns early, not just for a corrupted image.
 
 ### 2.4 Wire format
 

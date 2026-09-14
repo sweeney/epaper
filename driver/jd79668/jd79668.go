@@ -24,6 +24,7 @@ package jd79668
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -104,6 +105,20 @@ const (
 	// measured; 40 s is the vendor's timeout and leaves comfortable margin.
 	DefaultBusyTimeout = 40 * time.Second
 
+	// DefaultMinRefreshTime is the shortest believable full refresh.
+	//
+	// This guards the one failure BUSY cannot report. The line has a host
+	// pull-up, so a DISCONNECTED BUSY reads high — "ready" — and every wait
+	// returns instantly. Show would then succeed in milliseconds having
+	// drawn nothing, on a panel nobody is watching.
+	//
+	// Checking the line's state directly cannot distinguish that from a
+	// genuinely quick reply, but the elapsed time can: a measured full
+	// refresh on this panel is 25.4 s, and no real one completes in under a
+	// second. So the driver times the refresh wait instead of interrogating
+	// the line, which is unambiguous and has no race.
+	DefaultMinRefreshTime = time.Second
+
 	// DefaultCommandDelay is the pause before each command byte.
 	//
 	// The vendor sleeps 300 ms before EVERY command. With sixteen commands
@@ -132,6 +147,11 @@ type Config struct {
 	// BusyTimeout bounds a single wait for the panel. Zero means
 	// [DefaultBusyTimeout].
 	BusyTimeout time.Duration
+
+	// MinRefreshTime is the shortest refresh treated as believable. Zero
+	// means [DefaultMinRefreshTime]; a negative value disables the check,
+	// which is what a test with a fake transport wants.
+	MinRefreshTime time.Duration
 }
 
 // Device is a panel driven by a JD79668.
@@ -168,6 +188,9 @@ func New(conn Conn, cfg Config) (*Device, error) {
 	}
 	if cfg.BusyTimeout == 0 {
 		cfg.BusyTimeout = DefaultBusyTimeout
+	}
+	if cfg.MinRefreshTime == 0 {
+		cfg.MinRefreshTime = DefaultMinRefreshTime
 	}
 	return &Device{
 		conn:    conn,
@@ -253,8 +276,14 @@ func (d *Device) refresh(ctx context.Context, frame []byte) error {
 		if err := d.command(step.cmd, step.data); err != nil {
 			return fmt.Errorf("jd79668: %s: %w", step.name, err)
 		}
+		started := time.Now()
 		if err := d.conn.WaitReady(ctx, d.cfg.BusyTimeout); err != nil {
 			return fmt.Errorf("jd79668: waiting after %s: %w", step.name, err)
+		}
+		if step.cmd == cmdDRF {
+			if err := d.checkRefreshWasReal(time.Since(started)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -266,14 +295,32 @@ func (d *Device) refresh(ctx context.Context, frame []byte) error {
 	return nil
 }
 
+// checkRefreshWasReal reports an error if the panel claimed to finish
+// redrawing implausibly fast. See [DefaultMinRefreshTime] for why this is
+// timed rather than read off the BUSY line.
+func (d *Device) checkRefreshWasReal(elapsed time.Duration) error {
+	if d.cfg.MinRefreshTime < 0 || elapsed >= d.cfg.MinRefreshTime {
+		return nil
+	}
+	return fmt.Errorf("jd79668: the panel reported the refresh complete after only %s, "+
+		"but a full refresh takes about 25s. The BUSY line reads ready when it is "+
+		"disconnected, so check its wiring — nothing was drawn: %w", elapsed, ErrBusyNotConnected)
+}
+
+// ErrBusyNotConnected means the panel reported a refresh finished far too
+// quickly to be true, which on this hardware means the BUSY line is not
+// actually connected. Match with [errors.Is].
+var ErrBusyNotConnected = errors.New("jd79668: BUSY line appears disconnected")
+
 // init resets the panel and sends the initialisation sequence.
 //
 // This runs before EVERY refresh, not once at startup, because the previous
 // refresh ended with DSLP and the controller has forgotten everything.
 //
-// The reset comes first and unconditionally: with the panel asleep, BUSY reads
-// busy, so there is nothing useful to wait for beforehand. Measured on the
-// bench — see PLAN §2.3.
+// The reset comes first and unconditionally. BUSY reads busy for as long as
+// reset is asserted, so a wait beforehand tells you nothing; and an idle panel
+// is indistinguishable from a disconnected BUSY line, so there is nothing to
+// check for either. Characterised on the bench — see PLAN §2.3.
 //
 // Payloads verbatim from inky_jd79668.py Inky.setup(). The commands without
 // symbolic names have none in the vendor source; they are register writes the

@@ -85,6 +85,10 @@ func newDevice(t *testing.T, conn jd79668.Conn) *jd79668.Device {
 	d, err := jd79668.New(conn, jd79668.Config{
 		Width: 400, Height: 300,
 		CommandDelay: -1,
+		// A fake transport replies instantly, which is exactly what the
+		// disconnected-BUSY check exists to catch. Disable it here and test
+		// it deliberately in TestRefreshTooFastIsReported.
+		MinRefreshTime: -1,
 	})
 	if err != nil {
 		t.Fatalf("New(): %v", err)
@@ -168,8 +172,8 @@ func TestInitRunsBeforeEveryShow(t *testing.T) {
 }
 
 // The reset must be the very first thing, before anything waits on BUSY.
-// With the panel asleep BUSY reads busy, so a wait beforehand would hang for
-// the full timeout — measured on the bench, PLAN §2.3.
+// BUSY reads busy for as long as reset is asserted, so a wait beforehand is
+// meaningless — characterised on the bench, PLAN §2.3.
 func TestResetComesFirstAndNothingWaitsBeforeIt(t *testing.T) {
 	conn := &recordingConn{}
 	d := newDevice(t, conn)
@@ -225,7 +229,9 @@ func TestFramebufferIsSentWhole(t *testing.T) {
 // hardcodes 400x300; a different JD79668 board would need this right.
 func TestResolutionCommandFollowsTheGeometry(t *testing.T) {
 	conn := &recordingConn{}
-	d, err := jd79668.New(conn, jd79668.Config{Width: 640, Height: 480, CommandDelay: -1})
+	d, err := jd79668.New(conn, jd79668.Config{
+		Width: 640, Height: 480, CommandDelay: -1, MinRefreshTime: -1,
+	})
 	if err != nil {
 		t.Fatalf("New(): %v", err)
 	}
@@ -471,4 +477,54 @@ func opsContainBefore(ops []op, kind string, cmd byte) bool {
 		}
 	}
 	return false
+}
+
+// A disconnected BUSY line reads "ready" because of the host pull-up, so every
+// wait returns at once and Show would succeed in milliseconds having drawn
+// nothing. The elapsed time is what gives it away.
+func TestRefreshTooFastIsReported(t *testing.T) {
+	conn := &recordingConn{}
+	d, err := jd79668.New(conn, jd79668.Config{
+		Width: 400, Height: 300, CommandDelay: -1,
+		MinRefreshTime: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+
+	err = d.Show(context.Background(), d.NewImage())
+	if !errors.Is(err, jd79668.ErrBusyNotConnected) {
+		t.Fatalf("Show() error = %v, want ErrBusyNotConnected", err)
+	}
+	for _, want := range []string{"BUSY", "nothing was drawn"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// A slow enough refresh must NOT trip the check.
+func TestRefreshOfPlausibleLengthIsAccepted(t *testing.T) {
+	conn := &slowConn{delay: 20 * time.Millisecond}
+	d, err := jd79668.New(conn, jd79668.Config{
+		Width: 400, Height: 300, CommandDelay: -1,
+		MinRefreshTime: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+	if err := d.Show(context.Background(), d.NewImage()); err != nil {
+		t.Errorf("Show() = %v, want nil", err)
+	}
+}
+
+// slowConn takes a believable amount of time to report ready.
+type slowConn struct {
+	recordingConn
+	delay time.Duration
+}
+
+func (c *slowConn) WaitReady(ctx context.Context, d time.Duration) error {
+	time.Sleep(c.delay)
+	return c.recordingConn.WaitReady(ctx, d)
 }
