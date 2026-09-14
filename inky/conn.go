@@ -31,10 +31,31 @@ const (
 	busyPollEvery = 10 * time.Millisecond
 )
 
+// spiWriter and gpioLines are the slivers of the transports that conn
+// actually uses. They exist so this file — which is where an active-low line
+// gets inverted by accident, and where a mistake is a blank panel — can be
+// tested against fakes rather than only on a Pi.
+type spiWriter interface {
+	Write(b []byte) error
+	Close() error
+}
+
+type gpioLines interface {
+	Set(offset, value int) error
+	Get(offset int) (int, error)
+	Close() error
+}
+
+// Compile-time proof the real transports satisfy them.
+var (
+	_ spiWriter = (*spidev.Device)(nil)
+	_ gpioLines = (*gpiocdev.Lines)(nil)
+)
+
 // conn implements jd79668.Conn over an SPI device and four GPIO lines.
 type conn struct {
-	spi  *spidev.Device
-	gpio *gpiocdev.Lines
+	spi  spiWriter
+	gpio gpioLines
 	pins Pins
 }
 
