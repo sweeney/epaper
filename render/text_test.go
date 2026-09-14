@@ -30,7 +30,7 @@ var testFamily = func() render.FontFamily {
 		}
 		// DPI 72 makes one point equal one pixel, so "size" means px.
 		f, err := opentype.NewFace(parsed, &opentype.FaceOptions{
-			Size: float64(size), DPI: 72, Hinting: font.HintingFull,
+			Size: float64(size), DPI: 72, Hinting: font.HintingNone,
 		})
 		if err != nil {
 			return nil, err
@@ -316,5 +316,35 @@ func TestTextWithAMissingGlyph(t *testing.T) {
 	gapped := render.MeasureText("ABCD", f)
 	if gapped < plain {
 		t.Errorf("measured width with a missing glyph (%d) is less than without (%d)", gapped, plain)
+	}
+}
+
+// Small text must carry enough ink to be readable on a display with no
+// intermediate tones.
+//
+// This pins the alphaThreshold choice. At a 50% threshold, an 8px stem that
+// covers 40% of every pixel it touches disappears entirely, and the string
+// comes out with strokes missing at random — which reads as bad spacing
+// rather than as missing ink. On the real panel that made the model name
+// illegible. The numbers below are roughly two thirds of what a third-coverage
+// threshold produces, so an accidental return to 50% trips it while ordinary
+// font-version drift does not.
+func TestSmallTextCarriesEnoughInk(t *testing.T) {
+	for _, tc := range []struct {
+		size   int
+		minInk int
+	}{
+		{8, 140},
+		{10, 200},
+		{12, 280},
+	} {
+		c := render.NewCanvas(image.Rect(0, 0, 300, 40), fourInk)
+		c.Fill(epaper.White)
+		c.Text(image.Pt(2, 2), "Hamburgefonstiv 0123", face(t, tc.size), epaper.Black)
+
+		if got := countInk(c, black); got < tc.minInk {
+			t.Errorf("%dpx text inked %d pixels, want at least %d — strokes are dropping out",
+				tc.size, got, tc.minInk)
+		}
 	}
 }

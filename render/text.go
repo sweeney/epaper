@@ -9,13 +9,24 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-// alphaThreshold is where a glyph's coverage becomes ink.
+// alphaThreshold is the glyph coverage at which a pixel becomes ink.
 //
 // The panel has four inks and no intermediate tones, so text is binary: a
-// pixel is either ink or it is not. Letting the antialiased edge pixels map to
-// "nearest palette colour" instead would scatter yellow and red around the
-// edges of black text, which looks exactly as bad as it sounds.
-const alphaThreshold = 0x8000
+// pixel is either ink or it is not. Letting antialiased edges map to "nearest
+// palette colour" instead would scatter yellow and red around black text.
+//
+// The value is a THIRD, not a half, and this matters more than it sounds.
+// Rounding at 50% is the intuitive choice and it is wrong here: at 8-12px a
+// stem is about one pixel wide and rarely lands on a pixel boundary, so a
+// stem covering 40% of every pixel it touches disappears completely. The
+// result is text with strokes missing at random — which reads as bad spacing
+// rather than as missing ink, because the eye sees the gaps, not the cause.
+//
+// Chosen by rendering the same text across thresholds and looking at it. At a
+// third, 10px text is comfortably legible and 8px is readable; at a half,
+// neither is. Larger text is unaffected: its stems cover whole pixels either
+// way.
+const alphaThreshold = 0x5555
 
 // FontFamily produces a face at a requested pixel size. It is what
 // [Canvas.TextFitted] shrinks through.
@@ -24,6 +35,16 @@ const alphaThreshold = 0x8000
 // parses or allocates should cache. Faces are not closed by this package:
 // their lifetime belongs to whoever made them, and closing a cached face would
 // break the next caller.
+//
+// # Build faces with hinting OFF
+//
+// Counter-intuitively, [font.HintingNone] produces markedly more legible small
+// text here than [font.HintingFull] does. Hinting exists to snap stems to the
+// pixel grid, which ought to be exactly what a 1-bit display wants, but
+// x/image's implementation distorts glyph shapes at small ppem and rounds
+// every advance to a whole pixel, which makes spacing visibly uneven. The
+// unhinted outline, thresholded, comes out both better shaped and better
+// spaced. Compared by eye at 8, 10, 12 and 14px.
 type FontFamily func(sizePx int) (font.Face, error)
 
 // Text draws a single line of text with its top-left corner at p.

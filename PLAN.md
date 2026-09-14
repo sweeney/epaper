@@ -752,13 +752,37 @@ depends on it.
 2. **Does `Show` re-init every time?** The vendor driver does, because it
    `DSLP`s at the end. Keep that behaviour for M6; revisit only with evidence.
 
-3. **Are the 300 ms per-command delays load-bearing?** The vendor driver sleeps
-   300 ms before *every* command. 16 commands ≈ **4.8 s of the 25.4 s refresh**.
-   *This is arithmetic from source, not a measurement.* Experiment: patch the
-   vendor driver's sleep to 10 ms, time a refresh, inspect the panel. If output
-   is clean at ~20 s, our driver omits the blanket delay and keeps only the
-   documented reset timings. If it corrupts, we keep the delays and write down
-   *why*. **Do this before M6.**
+3. **Are the 300 ms per-command delays load-bearing?** *Measured at M8;
+   visual verdict outstanding.*
+
+   The vendor driver sleeps 300 ms before *every* command. Sixteen commands
+   per refresh predicted ~4.8 s of a 25.4 s refresh, and the measurement
+   matches almost exactly:
+
+   | Timing | Pattern | Refresh |
+   |---|---|---|
+   | vendor (300 ms) | test card | **25.628 s** |
+   | vendor (300 ms) | conformance | **25.249 s** |
+   | none (`-fast`) | test card | **20.762 s** |
+   | none (`-fast`) | conformance | **20.437 s**, **20.447 s** |
+
+   So the delays cost **~4.9 s, about 19% of every refresh**, and removing
+   them is repeatable to within 10 ms.
+
+   Two things did *not* happen, both worth recording:
+
+   - No refresh returned early. The concern raised in §2.3 — that a
+     `WaitReady` issued too soon after `PON` could return on a stale ready,
+     since an idle panel reads ready — did not materialise across three fast
+     runs. `jd79668.DefaultMinRefreshTime` would have caught it.
+   - No error of any kind.
+
+   **Still outstanding: whether the fast output is visually clean.** That
+   needs a person in front of the panel, and it is the only part of this
+   experiment a machine cannot do. Until someone has looked, the driver keeps
+   the vendor's value: a fast driver that corrupts the display is worse than
+   a slow one that works. `Options.CommandDelay` / `epaper-testcard -fast` is
+   the switch, so flipping the default is a one-line change once judged.
 
 4. **Chunk size.** 4096 is spidev's default `bufsiz`, but it is a module
    parameter. Read `/sys/module/spidev/parameters/bufsiz` at open and use it,
