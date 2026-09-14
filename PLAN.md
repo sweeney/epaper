@@ -2,8 +2,11 @@
 
 A Go library for driving e-ink panels from a Raspberry Pi.
 
-**Status:** planning. No code written yet. This document is the contract for
-what gets built and how.
+**Status:** in progress. M0–M2 are done — scaffolding, inks/palettes/packing,
+and EEPROM parsing, all pure and all verified against the committed fixtures.
+This document remains the contract for what gets built and how; §9 records the
+decisions taken along the way, and **§9.8 is a live question that needs
+answering before M4**.
 
 **Picking this up cold?** Read §1 for the goal, §2 for the hardware facts, §4
 for the API being committed to — then §11 for how to reach the bench, what
@@ -714,9 +717,67 @@ depends on it.
    it, no consumer has asked, and it complicates the API. Out of scope for v1;
    revisit if a real use case appears.
 
-6. **`Device.Show` concurrency.** Documented as not safe for concurrent use.
-   Should we add a mutex and make it safe, or keep it documented-only? Leaning
-   mutex — it is two lines and removes a whole class of consumer bug.
+6. ~~**`Device.Show` concurrency.**~~ **Resolved at M1.** Drivers serialise
+   `Show` internally with a mutex; the `Device` doc comment says so. It is two
+   lines and removes a whole class of consumer bug — a service with a ticker
+   and a webhook both calling `Show` would otherwise interleave two
+   framebuffers into one picture, 25 seconds later, intermittently. To be
+   implemented by the driver at M6.
+
+7. ~~**What does `NearestTo` measure "near" against?**~~ **Resolved at M1.**
+   §4.5 specified `NearestTo` without saying what the distance is *to*. An
+   `Ink` is an identity and has no colour of its own, so it needed one:
+   `Ink.RGB()` returns a *nominal* rendition (pure `#FF0000` for red, and so
+   on), used only as the reference point. A panel's real rendition stays in its
+   `Palette` entry, which is the whole reason the two types are separate.
+
+   Distance is **redmean**, not Euclidean sRGB, which over-weights blue.
+   Both metrics agree on every case this panel presents; redmean has the wider
+   margins.
+
+   Worth knowing: on our palette, `NearestTo(Orange)` is **yellow**, not red,
+   by roughly 1.5x under both metrics. It was worth computing rather than
+   assuming.
+
+8. **Band 6 of the conformance fixture cannot be reproduced from the
+   documented rules — only the other five bands can.** *Found at M1, needs a
+   decision before M4.*
+
+   §8's M8 argues the conformance fixture is byte-comparable because it is
+   font-free. That reasoning is incomplete. Verified by re-deriving the fixture
+   from `testdata/README.md`'s stated rules:
+
+   - **Bands 1–5** (`y` 0–259, 104,000 px): reproduce **exactly**, zero
+     mismatches. Flat fills, rules, checkerboards and the Bayer ramps are all
+     pure functions of `(x, y)` and are genuinely portable. The four corner
+     markers check out too.
+   - **Band 6** (`y` 260–299, 6,125 non-background px): produced by PIL's
+     `ImageDraw.ellipse`, `.line` and `.polygon`. Those rasterisers are exactly
+     as much an unportable implementation detail as glyph hinting is. Go has no
+     stdlib equivalent, and matching PIL's ellipse pixel-for-pixel means
+     reverse-engineering its algorithm.
+
+   There is a second problem underneath: **§4.5's `Canvas` has no `Ellipse` or
+   `Polygon` at all**, so as written, the API cannot draw band 6 even
+   approximately. The acceptance test asks for something the API does not
+   offer.
+
+   Three ways out:
+
+   | Option | Cost |
+   |---|---|
+   | **(a) Scope conformance to bands 1–5**, keep band 6 as a visual check | Honest, cheap. Loses byte-exactness on the geometry primitives — but that was never really available |
+   | **(b) Regenerate the fixture** with band 6 drawn from portable rules (Bresenham lines, midpoint ellipse) specified in `testdata/README.md` like the Bayer rule is | Needs the Pi and the venv (still present, §11.3). Keeps a 100% byte-exact oracle and forces us to *specify* the primitives rather than inherit them |
+   | **(c) Match PIL exactly** | Reverse-engineering someone else's rasteriser, and pinning our public API to it forever. No |
+
+   **Recommendation: (b)**, falling back to (a). The plan's own principle —
+   *measure, don't inherit* — argues for writing the rasterisation rule down
+   and testing against it, rather than treating PIL as an oracle for something
+   PIL was never authoritative about. Packing and dithering genuinely are
+   vendor-defined; ellipse rasterisation is not.
+
+   Either way `Canvas` needs `Ellipse` and `Polygon` added to §4.5, or band 6
+   dropped from the pattern.
 
 ---
 
