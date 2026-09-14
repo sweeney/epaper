@@ -1,0 +1,10 @@
+# Build output
+/bin/
+*.test
+
+# Coverage
+coverage.out
+coverage.html
+
+# Editor / OS
+.DS_Store
