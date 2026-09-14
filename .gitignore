@@ -8,3 +8,6 @@ coverage.html
 
 # Editor / OS
 .DS_Store
+
+# Golden-test actual output, written on failure for eyeballing
+*.got.png
