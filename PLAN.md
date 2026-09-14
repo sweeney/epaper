@@ -532,6 +532,12 @@ type Conn interface {
 }
 ```
 
+**Change made at M6:** the sketch above has a `Data` method; the real
+interface does not. Every byte this controller receives is part of a command,
+the 30,000-byte framebuffer included — it is `DTM`'s payload. `Data` was never
+called, and an unused interface method is dead code every implementation has
+to write.
+
 Which means a test can do this, with no Pi:
 
 ```go
