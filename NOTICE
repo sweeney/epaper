@@ -1,0 +1,24 @@
+epaper
+Copyright (c) 2026 Martin Sweeney
+
+This product includes work derived from the Pimoroni `inky` library.
+
+    https://github.com/pimoroni/inky
+    Copyright (c) Pimoroni Ltd
+    Licensed under the MIT License
+
+Specifically, the following are derived from `inky` version 2.5.0 and are not
+independent discoveries:
+
+  - The JD79668 initialisation and refresh command sequences, and every
+    payload constant in them (driver/jd79668).
+  - The panel reset timing.
+  - The 2-bits-per-pixel framebuffer packing expression.
+  - The EEPROM record layout, its colour table and its display-variant table
+    (inky/eeprom.go).
+
+The relevant vendor source is reproduced unmodified under `reference/vendor-inky/`
+so that a reader can check any constant against its origin. Each derived block
+in our source carries a comment naming the vendor file it came from.
+
+Everything else in this library is an independent implementation.
