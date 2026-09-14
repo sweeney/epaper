@@ -108,6 +108,14 @@ With the overlay set, only `/dev/spidev0.0` exists (`spidev0.1` disappears) and
   this by sleeping the full 40 s timeout. **We will return an error instead** —
   silently sleeping 40 s is worse than failing.
 
+  **Measured at M5, with the panel idle: BUSY reads 0 — busy.** The panel had
+  been sitting in `DSLP` for hours, and with the pull-up enabled a low reading
+  means something is actively holding the line down, i.e. the panel asserts
+  BUSY while asleep. Consequence for the driver: **never wait for BUSY before
+  the reset.** The hardware reset comes first, unconditionally, and BUSY is
+  only meaningful after `PON`. The vendor's sequence happens to do this
+  already; ours does it deliberately.
+
 ### 2.4 Wire format
 
 Four pixels per byte, two bits each, most-significant first:

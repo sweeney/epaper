@@ -60,9 +60,12 @@ build:
 check: tidy lint test build
 
 ## test-hw: ship a test binary to the Pi and run it there. No Go toolchain needed on the Pi.
+#
+# `go test -c` compiles ONE package, which is why every hardware test lives in
+# ./hwtest rather than beside the code it exercises.
 .PHONY: test-hw
 test-hw:
-	GOOS=linux GOARCH=arm64 go test -c -tags hardware -o $(REMOTE:%=%.bin) $(PKGS)
+	GOOS=linux GOARCH=arm64 go test -c -tags hardware -o $(REMOTE:%=%.bin) ./hwtest
 	scp -q $(REMOTE:%=%.bin) $(HOST):$(REMOTE)
 	ssh $(HOST) '$(REMOTE) -test.v; rc=$$?; rm -f $(REMOTE); exit $$rc'
 	@rm -f $(REMOTE:%=%.bin)
