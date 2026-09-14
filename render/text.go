@@ -1,0 +1,161 @@
+package render
+
+import (
+	"fmt"
+	"image"
+
+	"github.com/sweeney/epaper"
+	"golang.org/x/image/font"
+	"golang.org/x/image/math/fixed"
+)
+
+// alphaThreshold is where a glyph's coverage becomes ink.
+//
+// The panel has four inks and no intermediate tones, so text is binary: a
+// pixel is either ink or it is not. Letting the antialiased edge pixels map to
+// "nearest palette colour" instead would scatter yellow and red around the
+// edges of black text, which looks exactly as bad as it sounds.
+const alphaThreshold = 0x8000
+
+// FontFamily produces a face at a requested pixel size. It is what
+// [Canvas.TextFitted] shrinks through.
+//
+// TextFitted may ask for many sizes in one call, so an implementation that
+// parses or allocates should cache. Faces are not closed by this package:
+// their lifetime belongs to whoever made them, and closing a cached face would
+// break the next caller.
+type FontFamily func(sizePx int) (font.Face, error)
+
+// Text draws a single line of text with its top-left corner at p.
+//
+// Note "top-left", not the baseline. Font APIs normally position text by its
+// baseline, which is correct and consistently surprising; since almost every
+// e-ink layout is really placing a box, this takes the corner and works the
+// baseline out from the face's ascent.
+//
+// Glyph coverage is thresholded rather than blended — see the package docs on
+// why a four-ink panel wants binary text. Text is clipped to the canvas, which
+// on e-ink means it silently vanishes; use [Canvas.TextFitted] or
+// [MeasureText] rather than assuming a string fits.
+func (c *Canvas) Text(p image.Point, s string, f font.Face, i epaper.Ink) {
+	idx, ok := c.ink(i)
+	if !ok {
+		return
+	}
+	if f == nil {
+		c.fail(fmt.Errorf("render: text: font face is nil"))
+		return
+	}
+
+	dot := fixed.Point26_6{
+		X: fixed.I(p.X),
+		Y: fixed.I(p.Y) + f.Metrics().Ascent,
+	}
+	prev := rune(-1)
+	for _, r := range s {
+		if prev >= 0 {
+			dot.X += f.Kern(prev, r)
+		}
+		dr, mask, maskp, advance, ok := f.Glyph(dot, r)
+		if !ok {
+			// No glyph for this rune. Advance anyway so the rest of the
+			// string keeps its position rather than sliding left.
+			a, _ := f.GlyphAdvance(r)
+			dot.X += a
+			prev = r
+			continue
+		}
+		c.blit(dr, mask, maskp, idx)
+		dot.X += advance
+		prev = r
+	}
+}
+
+// blit paints a glyph mask, thresholded to a single ink.
+func (c *Canvas) blit(dr image.Rectangle, mask image.Image, maskp image.Point, idx uint8) {
+	clipped := dr.Intersect(c.img.Rect)
+	for y := clipped.Min.Y; y < clipped.Max.Y; y++ {
+		for x := clipped.Min.X; x < clipped.Max.X; x++ {
+			mx := maskp.X + (x - dr.Min.X)
+			my := maskp.Y + (y - dr.Min.Y)
+			if _, _, _, a := mask.At(mx, my).RGBA(); a >= alphaThreshold {
+				c.img.Pix[c.img.PixOffset(x, y)] = idx
+			}
+		}
+	}
+}
+
+// TextFitted draws text as large as will fit inside r, and returns the pixel
+// size it used. It returns 0, and records an error, if the string will not fit
+// at any size.
+//
+// This exists because **every** layout bug found on the bench was silent
+// clipping: a header losing its final letter, a row cut mid-word, a footer
+// drawn over a pattern. On e-ink there is no scrollbar and no overflow
+// indicator — text that does not fit simply is not there, and nobody is
+// watching the panel at the moment it happens. Asking for the largest size
+// that fits makes that failure loud at the point it occurs.
+//
+// Sizes are tried from the height of r downwards, so the result is the largest
+// that fits both the width and the line height.
+func (c *Canvas) TextFitted(r image.Rectangle, s string, ff FontFamily, i epaper.Ink) int {
+	if _, ok := c.ink(i); !ok {
+		return 0
+	}
+	if ff == nil {
+		c.fail(fmt.Errorf("render: text fitted: font family is nil"))
+		return 0
+	}
+	if r.Empty() {
+		c.fail(fmt.Errorf("render: text fitted: rectangle %v is empty", r))
+		return 0
+	}
+
+	for size := r.Dy(); size >= 1; size-- {
+		face, err := ff(size)
+		if err != nil {
+			c.fail(fmt.Errorf("render: text fitted: font family at %dpx: %w", size, err))
+			return 0
+		}
+		if MeasureText(s, face) <= r.Dx() && LineHeight(face) <= r.Dy() {
+			c.Text(r.Min, s, face, i)
+			return size
+		}
+	}
+
+	c.fail(fmt.Errorf("render: text fitted: %q does not fit in %v at any size: %w",
+		s, r, ErrTextDoesNotFit))
+	return 0
+}
+
+// ErrTextDoesNotFit means a string could not be drawn inside the rectangle
+// given, at any font size. Match with [errors.Is] on [Canvas.Err].
+var ErrTextDoesNotFit = fmt.Errorf("render: text does not fit")
+
+// MeasureText returns the advance width of a string in pixels, kerning
+// included.
+//
+// The result is rounded **up**. A measurement that under-reports by a fraction
+// of a pixel is how a layout ends up one character short with no indication
+// that anything went wrong.
+func MeasureText(s string, f font.Face) int {
+	if f == nil {
+		return 0
+	}
+	return ceilFixed(font.MeasureString(f, s))
+}
+
+// LineHeight returns a face's ascent plus descent in pixels, rounded up. This
+// is the height a single line of text occupies.
+func LineHeight(f font.Face) int {
+	if f == nil {
+		return 0
+	}
+	m := f.Metrics()
+	return ceilFixed(m.Ascent + m.Descent)
+}
+
+// ceilFixed converts a 26.6 fixed-point value to whole pixels, rounding up.
+func ceilFixed(v fixed.Int26_6) int {
+	return int((v + 0x3F) >> 6)
+}
