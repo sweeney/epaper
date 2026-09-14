@@ -2,10 +2,19 @@
 
 A Go library for driving e-ink panels from a Raspberry Pi.
 
-**Status:** in progress. M0–M2 are done — scaffolding, inks/palettes/packing,
-and EEPROM parsing, all pure and all verified against the committed fixtures.
-This document remains the contract for what gets built and how; §9 records the
-decisions taken along the way.
+**Status:** M0–M9 complete. The library drives the panel end to end: the test
+card and the conformance pattern both draw on the wHAT in ~25.6 s, and the
+conformance pattern is reproduced byte for byte in software with no hardware
+present.
+
+This document remains the contract for what was built and why; §9 records the
+decisions taken along the way, including three places where the plan was wrong
+and had to be corrected against measurements (§9.8, §2.3, §9.3).
+
+**One question is still open and needs a person, not a machine: §9.3.** The
+vendor's 300 ms per-command delays cost 4.9 s of every 25.4 s refresh, and
+removing them is repeatable; whether the faster output is visually clean needs
+someone in front of the panel.
 
 **Picking this up cold?** Read §1 for the goal, §2 for the hardware facts, §4
 for the API being committed to — then §11 for how to reach the bench, what

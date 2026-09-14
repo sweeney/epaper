@@ -5,8 +5,10 @@ A Go library for driving e-ink panels from a Raspberry Pi.
 Make the panel disappear, so that a program that wants to put something on an
 e-ink screen thinks only about the picture.
 
-> **Status: v0, under construction.** The API may change until v1.0. See
-> [`PLAN.md`](PLAN.md) for the full design and the milestone list.
+> **Status: v0.** Working end to end on a Pi 4B with an Inky wHAT 4.2" — the
+> test card draws on the panel in 25.6 s. The API may still change before
+> v1.0. See [`PLAN.md`](PLAN.md) for the design and the milestone list, and
+> [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to add a controller.
 
 ## What it looks like
 
@@ -88,6 +90,13 @@ presents as a chip-select conflict, not as a missing device.
 
 The user must be in the `spi`, `i2c` and `gpio` groups. Root is not needed.
 
+## Try it
+
+```bash
+go run ./cmd/epaper-testcard -png card.png    # no hardware needed
+go run ./cmd/epaper-testcard                  # draw on the panel, ~25 s
+```
+
 ## Testing without a Pi
 
 Most of this library is pure and runs on a laptop:
@@ -110,8 +119,16 @@ and test an entire display program with no hardware present.
 Hardware tests are behind `//go:build hardware` and never run in CI:
 
 ```bash
-make test-hw HOST=sweeney@192.168.1.6
+make test-hw HOST=user@your-pi
 ```
+
+### How far the fixtures go
+
+The conformance pattern is reproduced **byte for byte** by the `render`
+package: all 120,000 palette indices, and the 30,000 packed bytes the vendor
+library would have sent. Every shape in it follows a rule written down in
+`testdata/README.md` rather than inherited from another library's rasteriser,
+which is what makes that comparison possible at all.
 
 ## Licence
 
