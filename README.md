@@ -146,6 +146,10 @@ your code disagrees with one, your code is wrong.
 The `mock` package implements `epaper.Device` in memory, so a consumer can build
 and test an entire display program with no hardware present.
 
+Every CI run attaches a self-contained HTML report — results, per-package
+coverage, and the rendered goldens, with expected and actual shown side by
+side when one changes. Build it locally with `make report`.
+
 Hardware tests are behind `//go:build hardware` and never run in CI:
 
 ```bash

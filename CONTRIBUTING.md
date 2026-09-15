@@ -13,7 +13,17 @@ from a number nobody had checked.
 make test     # pure packages, fast, no hardware
 make check    # everything CI runs: tidy, lint, test, cross-compile
 make golden   # regenerate testdata/golden — then LOOK at the diff
+make report   # run the tests and build test-report.html
 ```
+
+`make report` writes a self-contained HTML page: results, per-package
+coverage, and the rendered goldens. CI builds the same page and attaches it to
+every run as the `test-report` artifact, passing or failing.
+
+When a golden does not match, the page shows **expected and actual side by
+side**. That is the point of it — for this library most of what the tests
+assert is what got drawn, and "3 failed" tells you nothing about whether the
+test card still looks right.
 
 Hardware tests live in `./hwtest` behind the `hardware` build tag and never
 run in CI:

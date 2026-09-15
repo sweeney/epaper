@@ -21,9 +21,60 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
-      - run: go test -race -coverprofile=coverage.out ./...
-      - name: coverage summary
-        run: go tool cover -func=coverage.out | tail -n 20
+
+      # Capture the run rather than letting it fail the step, so the report
+      # below is produced either way — a red build is exactly when you want it.
+      - name: run tests
+        id: gotest
+        run: |
+          set -o pipefail
+          go test -race -json -coverprofile=coverage.out ./... | tee test.json
+        continue-on-error: true
+
+      - name: build report
+        id: report
+        run: |
+          go run ./internal/cmd/testreport \
+            -json test.json \
+            -cover coverage.out \
+            -goldens testdata/golden \
+            -o test-report.html \
+            -title "epaper" \
+            -branch "${GITHUB_REF_NAME}" \
+            -commit "${GITHUB_SHA::7}" \
+            -summary "${GITHUB_STEP_SUMMARY}" \
+            -artifact "test-report"
+        continue-on-error: true
+
+      # always(): a failing run is the one you most want to look at.
+      - name: upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: |
+            test-report.html
+            test.json
+            coverage.out
+          retention-days: 30
+
+      # Goldens that did not match are written beside them as <name>.got.png.
+      # Uploading them turns "the render changed" into something you can look
+      # at instead of guess about.
+      - name: upload changed renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: changed-renders
+          path: testdata/golden/*.got.png
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: fail if tests failed
+        if: steps.gotest.outcome != 'success' || steps.report.outcome != 'success'
+        run: |
+          echo "tests failed — see the test-report artifact and the summary above"
+          exit 1
 
   build:
     name: build
@@ -37,16 +88,35 @@ jobs:
             goarch: arm     # Pi Zero / 32-bit userland
           - goos: darwin
             goarch: arm64   # keeps the mock path portable
+          - goos: windows
+            goarch: amd64   # nothing here should be Unix-only off the Pi
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"   # a static binary, cross-compiled, no toolchain on the Pi
+        run: go build ./...
+
+  hardware-compiles:
+    # The hardware tests never RUN in CI, but they must keep compiling, or
+    # they rot quietly and the next bench session starts with a build error.
+    name: hardware tests compile
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
       - env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          GOOS: linux
+          GOARCH: arm64
           CGO_ENABLED: "0"
-        run: go build ./...
+        run: go test -c -tags hardware -o /dev/null ./hwtest
 
   lint:
     name: lint

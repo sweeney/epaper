@@ -33,6 +33,17 @@ golden:
 	@echo "Goldens regenerated. Review the diff: a golden accepted without"
 	@echo "being looked at asserts nothing at all."
 
+## report: run the tests and open an HTML report of the results
+.PHONY: report
+report:
+	@set -o pipefail; go test -race -json -coverprofile=coverage.out $(PKGS) | tee test.json || true
+	@go run ./internal/cmd/testreport \
+		-json test.json -cover coverage.out -goldens testdata/golden \
+		-o test-report.html -title epaper \
+		-branch "$$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" \
+		-commit "$$(git rev-parse --short HEAD 2>/dev/null)"
+	@echo "open test-report.html"
+
 ## lint: vet + golangci-lint
 .PHONY: lint
 lint:
