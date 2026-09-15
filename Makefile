@@ -11,6 +11,8 @@ REMOTE  := /tmp/epaper-hwtest
 # either, so a new check showing up is something to fix rather than to silence.
 GOLANGCI         := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 GOLANGCI_VERSION := latest
+TOOLS_DIR        := $(CURDIR)/.tools
+GOLANGCI_BIN     := $(TOOLS_DIR)/golangci-lint
 
 # Long enough to catch a crash introduced since the last run, short enough to
 # sit in a pre-push check. Raise it when actually hunting.
@@ -59,16 +61,27 @@ report:
 		-commit "$$(git rev-parse --short HEAD 2>/dev/null)"
 	@echo "open test-report.html"
 
-## lint: vet + golangci-lint (downloaded on demand if not installed)
+## lint: vet + golangci-lint, for BOTH host and Linux build constraints
+#
+# Linting only the host's GOOS silently skips every *_linux.go file, so on a
+# Mac the transports are not analysed at all. CI runs on Linux and found six
+# issues this way. The linter binary must be native — only the ANALYSIS is
+# done as Linux — so this installs one rather than `go run`-ing it, which
+# would cross-compile it and fail to exec.
 .PHONY: lint
-lint:
+lint: $(GOLANGCI_BIN)
 	go vet $(PKGS)
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run $(PKGS); \
-	else \
-		echo "golangci-lint not installed; running it via go run"; \
-		GOFLAGS=-mod=mod go run $(GOLANGCI)@$(GOLANGCI_VERSION) run $(PKGS); \
-	fi
+	GOOS=linux GOARCH=arm64 go vet $(PKGS)
+	@echo "  linting for $$(go env GOHOSTOS)"
+	@$(GOLANGCI_BIN) run $(PKGS)
+	@echo "  linting for linux"
+	@GOOS=linux GOARCH=arm64 $(GOLANGCI_BIN) run $(PKGS)
+
+# Installed with `go install pkg@version`, which deliberately ignores this
+# module's go.mod — building it without the @version would add the linter to
+# our dependencies, which is how go.sum grew 413 lines once.
+$(GOLANGCI_BIN):
+	GOBIN=$(TOOLS_DIR) go install $(GOLANGCI)@$(GOLANGCI_VERSION)
 
 ## tidy: go mod tidy must produce no diff
 .PHONY: tidy
@@ -117,10 +130,11 @@ testcard:
 	ssh $(HOST) '/tmp/epaper-testcard; rc=$$?; rm -f /tmp/epaper-testcard; exit $$rc'
 	@rm -f /tmp/epaper-testcard
 
-## clean: remove build and coverage output
+## clean: remove build, coverage and tool output
 .PHONY: clean
 clean:
-	rm -f coverage.out coverage.html
+	rm -f coverage.out coverage.html test-report.html test.json
+	rm -rf $(TOOLS_DIR)
 	go clean -testcache
 
 ## help: list targets

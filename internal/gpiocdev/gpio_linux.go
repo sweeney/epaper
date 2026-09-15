@@ -44,7 +44,9 @@ func Open(cfg Config) (*Lines, error) {
 		line, err := gpiod.RequestLine(chip, offset,
 			append(append([]gpiod.LineReqOption{}, opts...), gpiod.AsOutput(initial))...)
 		if err != nil {
-			l.Close()
+			// Hand back whatever was already claimed; the request failure
+			// is the error worth reporting.
+			_ = l.Close()
 			return nil, lineError(chip, offset, "output", err)
 		}
 		l.lines[offset] = line
@@ -53,7 +55,7 @@ func Open(cfg Config) (*Lines, error) {
 		line, err := gpiod.RequestLine(chip, offset,
 			append(append([]gpiod.LineReqOption{}, opts...), gpiod.AsInput, gpiod.WithPullUp)...)
 		if err != nil {
-			l.Close()
+			_ = l.Close()
 			return nil, lineError(chip, offset, "input", err)
 		}
 		l.lines[offset] = line
@@ -123,7 +125,8 @@ func FindChip() (string, error) {
 			continue
 		}
 		label := c.Label
-		c.Close()
+		// Only the label was wanted; this chip is not being kept open.
+		_ = c.Close()
 		if strings.HasPrefix(label, "pinctrl-") {
 			return name, nil
 		}

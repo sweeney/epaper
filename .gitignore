@@ -19,3 +19,6 @@ test.json
 # Stray binaries from `go build ./cmd/...`
 /testreport
 /epaper-testcard
+
+# Locally installed dev tools
+/.tools/

@@ -62,19 +62,22 @@ func Open(cfg Config) (*Device, error) {
 
 	d := &Device{f: f, chunkSize: readBufsiz()}
 
+	// Each of these closes the file on failure. The close error is discarded
+	// deliberately: the ioctl failure is what the caller needs to know, and a
+	// second error about tidying up after it would only obscure that.
 	mode := uint8(cfg.Mode)
 	if err := ioctlPtr(f.Fd(), iocWrMode, unsafe.Pointer(&mode)); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("spidev: %s: set mode %d: %w", cfg.Path, cfg.Mode, err)
 	}
 	bits := uint8(8)
 	if err := ioctlPtr(f.Fd(), iocWrBitsPerWord, unsafe.Pointer(&bits)); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("spidev: %s: set bits per word: %w", cfg.Path, err)
 	}
 	speed := cfg.SpeedHz
 	if err := ioctlPtr(f.Fd(), iocWrMaxSpeedHz, unsafe.Pointer(&speed)); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("spidev: %s: set speed %d Hz: %w", cfg.Path, cfg.SpeedHz, err)
 	}
 	return d, nil
