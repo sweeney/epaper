@@ -9,6 +9,7 @@ import (
 	"github.com/sweeney/epaper"
 	"github.com/sweeney/epaper/mock"
 	"github.com/sweeney/epaper/render"
+	"golang.org/x/image/font/basicfont"
 )
 
 var fourInk = epaper.Palette{
@@ -357,5 +358,80 @@ func TestPolygonClipped(t *testing.T) {
 	}
 	if got := at(t, c, 4, 4); got != black {
 		t.Errorf("pixel (4,4) = %d, want black — the clipped polygon should still cover the canvas", got)
+	}
+}
+
+// A canvas need not start at the origin. image.Paletted supports an offset
+// rectangle and NewCanvasFor passes the device's bounds through unchanged, so
+// every primitive has to respect Min rather than assuming (0,0).
+//
+// Getting this wrong shifts everything by the offset, which on a panel looks
+// like a layout mistake rather than an indexing one.
+func TestCanvasWithOffsetBounds(t *testing.T) {
+	const ox, oy = 37, 11
+	c := render.NewCanvas(image.Rect(ox, oy, ox+40, oy+30), fourInk)
+	c.Fill(epaper.White)
+
+	// Every primitive, placed relative to the offset origin.
+	c.Set(ox+1, oy+1, epaper.Black)
+	c.Rect(image.Rect(ox+4, oy+4, ox+10, oy+10), epaper.Red)
+	c.StrokeRect(image.Rect(ox+12, oy+4, ox+20, oy+12), epaper.Black)
+	c.Line(image.Pt(ox, oy+20), image.Pt(ox+39, oy+20), epaper.Black)
+	c.Ellipse(image.Rect(ox+22, oy+4, ox+34, oy+16), epaper.Yellow)
+	c.Polygon([]image.Point{{ox + 2, oy + 28}, {ox + 10, oy + 22}, {ox + 18, oy + 28}}, epaper.Red)
+	c.Checker(image.Rect(ox+22, oy+20, ox+38, oy+28), epaper.Yellow, epaper.Red, 2)
+	c.Dither(image.Rect(ox+2, oy+14, ox+18, oy+18), epaper.Black, epaper.White, 0.5)
+
+	if err := c.Err(); err != nil {
+		t.Fatalf("Err() = %v", err)
+	}
+
+	for _, tc := range []struct {
+		x, y int
+		want uint8
+		what string
+	}{
+		{ox + 1, oy + 1, black, "Set"},
+		{ox + 5, oy + 5, red, "Rect"},
+		{ox + 12, oy + 4, black, "StrokeRect edge"},
+		{ox + 16, oy + 8, white, "StrokeRect interior"},
+		{ox + 20, oy + 20, black, "Line"},
+		{ox + 28, oy + 10, yellow, "Ellipse"},
+		{ox + 10, oy + 27, red, "Polygon"},
+	} {
+		if got := c.Image().ColorIndexAt(tc.x, tc.y); got != tc.want {
+			t.Errorf("%s: pixel (%d,%d) = %d, want %d", tc.what, tc.x, tc.y, got, tc.want)
+		}
+	}
+
+	// Nothing may have been written outside the canvas, and the image must
+	// still pack cleanly.
+	if _, err := epaper.Pack(c.Image()); err != nil {
+		t.Errorf("Pack(): %v", err)
+	}
+}
+
+// Text on an offset canvas must land where it was asked for, not at the
+// offset's worth of distance away from it.
+func TestTextWithOffsetBounds(t *testing.T) {
+	const ox, oy = 50, 20
+	c := render.NewCanvas(image.Rect(ox, oy, ox+200, oy+40), fourInk)
+	c.Fill(epaper.White)
+	c.Text(image.Pt(ox+2, oy+2), "Hg", basicfont.Face7x13, epaper.Black)
+
+	if err := c.Err(); err != nil {
+		t.Fatalf("Err() = %v", err)
+	}
+
+	found := false
+	for y := oy; y < oy+20; y++ {
+		for x := ox; x < ox+40; x++ {
+			if c.Image().ColorIndexAt(x, y) == black {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("no ink near the requested position; text ignored the canvas origin")
 	}
 }
