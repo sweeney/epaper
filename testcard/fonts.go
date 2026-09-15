@@ -22,14 +22,20 @@ const bitmapCeiling = 17
 // Fonts returns the card's default faces, which need no font file.
 //
 // Small sizes are hand-drawn bitmap faces from golang.org/x/image —
-// [basicfont.Face7x13] below 14px, [inconsolata.Regular8x16] above — because
+// [basicfont.Face7x13] below 17px, [inconsolata.Regular8x16] above — because
 // those were designed on a pixel grid and stay crisp on a panel with no
 // intermediate tones to soften an edge with.
 //
 // Large sizes are the same bitmap face integer-scaled with [render.ScaleFace],
 // so a heading is exactly as crisp as the body text rather than being the one
-// blurry thing on the panel. The trade is that sizes come in steps: asking for
-// 44px gets you 32px, the largest whole multiple that fits.
+// blurry thing on the panel. The trade is that sizes come in steps of 17px:
+// asking for 48px gets you 34px, the largest whole multiple that fits. The
+// face returned is never TALLER than the size requested, which is what
+// [render.Canvas.TextFitted] relies on — with one unavoidable exception:
+// nothing here is smaller than 13px, so a request below that gets the 13px
+// face. TextFitted will then correctly report that the box cannot hold text,
+// which on this hardware it cannot: the bench found 10px to be the floor for
+// legibility and 8px unreadable.
 //
 // It embeds nothing of its own — those faces are already linked in, because
 // this library depends on golang.org/x/image for [font.Face] regardless.
@@ -39,7 +45,7 @@ func Fonts() render.FontFamily {
 
 	return func(size int) (font.Face, error) {
 		switch {
-		case size < 14:
+		case size < inconsolataHeight:
 			return basicfont.Face7x13, nil
 		case size < 2*inconsolataHeight:
 			return inconsolata.Regular8x16, nil
@@ -60,9 +66,13 @@ func Fonts() render.FontFamily {
 	}
 }
 
-// inconsolataHeight is the pixel height of inconsolata.Regular8x16, and so the
-// step between the scaled sizes [Fonts] can offer.
-const inconsolataHeight = 16
+// inconsolataHeight is the LINE height of inconsolata.Regular8x16 — ascent 14
+// plus descent 3 — and so the step between the scaled sizes [Fonts] offers.
+//
+// It is 17, not the 16 in the face's name: "8x16" describes the glyph cell,
+// not the metrics. Taking the name at face value made Fonts(48) hand back a
+// 51px face, overshooting what the caller asked for. Caught by a doc example.
+const inconsolataHeight = 17
 
 // FontsWith is [Fonts] for the small sizes, scaling the supplied TrueType font
 // above the point where outlines start to work — around 17px.

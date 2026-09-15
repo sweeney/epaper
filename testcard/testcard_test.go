@@ -2,6 +2,7 @@ package testcard
 
 import (
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"strings"
@@ -286,27 +287,95 @@ func inksUsed(c *render.Canvas) []uint8 {
 func TestFontsCoverLargeSizes(t *testing.T) {
 	fonts := Fonts()
 
-	small, err := fonts(16)
+	base, err := fonts(inconsolataHeight)
 	if err != nil {
-		t.Fatalf("fonts(16): %v", err)
+		t.Fatalf("fonts(%d): %v", inconsolataHeight, err)
 	}
-	big, err := fonts(48)
+	big, err := fonts(4 * inconsolataHeight)
 	if err != nil {
-		t.Fatalf("fonts(48): %v", err)
+		t.Fatalf("fonts(%d): %v", 4*inconsolataHeight, err)
 	}
-	if render.LineHeight(big) <= render.LineHeight(small) {
-		t.Errorf("48px line height %d is not greater than 16px %d",
-			render.LineHeight(big), render.LineHeight(small))
+
+	if render.LineHeight(big) <= render.LineHeight(base) {
+		t.Errorf("large face height %d is not greater than the base %d",
+			render.LineHeight(big), render.LineHeight(base))
 	}
-	// Whole multiples only, so glyph edges stay on pixel boundaries.
-	if h := render.LineHeight(big); h%render.LineHeight(small) != 0 {
-		t.Errorf("48px line height %d is not a whole multiple of %d",
-			h, render.LineHeight(small))
+	// Whole multiples only, so glyph edges stay on pixel boundaries — that is
+	// the entire reason scaling a bitmap face is worth doing.
+	if h := render.LineHeight(big); h%render.LineHeight(base) != 0 {
+		t.Errorf("large face height %d is not a whole multiple of %d",
+			h, render.LineHeight(base))
 	}
-	// And the same face for the same size, so a family that is asked
-	// repeatedly does not allocate a new wrapper every time.
-	again, _ := fonts(48)
+	// And the same face for the same size, so a family asked repeatedly does
+	// not allocate a new wrapper every time.
+	again, _ := fonts(4 * inconsolataHeight)
 	if again != big {
 		t.Error("fonts() returned a different face for the same size; it is not caching")
+	}
+}
+
+// The face a family returns must never be TALLER than the size asked for.
+//
+// render.Canvas.TextFitted relies on it: it walks sizes downwards and takes
+// the first that fits, so a family that overshoots makes it reject sizes that
+// would have been fine and settle on text smaller than necessary. This is
+// exactly what the "8x16" in inconsolata's name caused — the line height is
+// 17, and treating it as 16 made Fonts(48) return a 51px face.
+func TestFontsNeverExceedTheRequestedSize(t *testing.T) {
+	fonts := Fonts()
+	// smallestFace is basicfont.Face7x13's line height. Below it there is
+	// nothing smaller to offer, and TextFitted correctly reports that the box
+	// will not hold text — see TestFontsBelowTheSmallestFace.
+	const smallestFace = 13
+	for size := smallestFace; size <= 200; size++ {
+		f, err := fonts(size)
+		if err != nil {
+			t.Fatalf("fonts(%d): %v", size, err)
+		}
+		if h := render.LineHeight(f); h > size {
+			t.Errorf("fonts(%d) returned a face of height %d", size, h)
+		}
+	}
+}
+
+// Below the smallest face there is nothing to return but the smallest face.
+// The caller finds out through TextFitted, which refuses the box rather than
+// drawing something that does not fit.
+func TestFontsBelowTheSmallestFace(t *testing.T) {
+	fonts := Fonts()
+	for size := 1; size < 13; size++ {
+		f, err := fonts(size)
+		if err != nil {
+			t.Fatalf("fonts(%d): %v", size, err)
+		}
+		if h := render.LineHeight(f); h != 13 {
+			t.Errorf("fonts(%d) height = %d, want the 13px floor", size, h)
+		}
+	}
+
+	c := render.NewCanvas(image.Rect(0, 0, 200, 200), fourInk)
+	if got := c.TextFitted(image.Rect(0, 0, 100, 8), "hello", fonts, epaper.Black); got != 0 {
+		t.Errorf("TextFitted into an 8px box = %d, want 0", got)
+	}
+	if !errors.Is(c.Err(), render.ErrTextDoesNotFit) {
+		t.Errorf("Err() = %v, want ErrTextDoesNotFit", c.Err())
+	}
+}
+
+// And it must keep growing: a family that quietly stopped scaling would make
+// every heading the same size without any error.
+func TestFontsKeepGrowing(t *testing.T) {
+	fonts := Fonts()
+	prev := 0
+	for _, size := range []int{10, 20, 40, 80, 160} {
+		f, err := fonts(size)
+		if err != nil {
+			t.Fatalf("fonts(%d): %v", size, err)
+		}
+		h := render.LineHeight(f)
+		if h <= prev {
+			t.Errorf("fonts(%d) height %d is not greater than the previous %d", size, h, prev)
+		}
+		prev = h
 	}
 }

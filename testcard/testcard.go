@@ -377,10 +377,13 @@ func drawCircle(c *render.Canvas, fonts render.FontFamily, title string, lines [
 			}
 		}
 
-		// A legibility ladder, smallest last. These are the faces the family
-		// actually hands out, so the card shows what the library will really
-		// draw at each size.
-		for _, size := range []int{16, 13} {
+		// A legibility ladder, smallest last.
+		//
+		// These sizes are chosen to land on DIFFERENT faces from the default
+		// family — 17px and 13px — so the card shows two distinct renderings
+		// rather than the same one twice. A family that maps them together
+		// will simply draw one size twice, which is harmless.
+		for _, size := range []int{17, 13} {
 			f, err := fonts(size)
 			if err != nil {
 				break
