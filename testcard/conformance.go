@@ -1,5 +1,6 @@
-// The conformance pattern. The package doc is in testcard.go.
 package testcard
+
+// This file holds the conformance pattern; the package doc is in testcard.go.
 
 import (
 	"image"

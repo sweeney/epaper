@@ -17,6 +17,7 @@
 package golden
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -109,8 +110,7 @@ func write(path string, img image.Image) error {
 		return err
 	}
 	if err := png.Encode(f, img); err != nil {
-		f.Close()
-		return err
+		return errors.Join(err, f.Close())
 	}
 	return f.Close()
 }
@@ -120,7 +120,7 @@ func read(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return png.Decode(f)
 }
 

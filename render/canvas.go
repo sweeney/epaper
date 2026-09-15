@@ -300,12 +300,14 @@ func (c *Canvas) Polygon(pts []image.Point, i epaper.Ink) {
 					neg = true
 				}
 			}
-			// Inside when no edge reports it strictly outside. Testing
-			// "not (pos and neg)" rather than "all positive" is what makes
-			// this independent of the winding order.
-			if !(pos && neg) {
-				c.img.Pix[c.img.PixOffset(x, y)] = idx
+			// Seeing BOTH signs means the pixel is on the outside of at
+			// least one edge. Testing for that, rather than for "all
+			// positive", is what makes this independent of the winding
+			// order.
+			if pos && neg {
+				continue
 			}
+			c.img.Pix[c.img.PixOffset(x, y)] = idx
 		}
 	}
 }

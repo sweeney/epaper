@@ -7,6 +7,11 @@ HOST    ?= sweeney@192.168.1.6
 PKGS    := ./...
 REMOTE  := /tmp/epaper-hwtest
 
+# Linter, fetched on demand when it is not installed locally. CI pins nothing
+# either, so a new check showing up is something to fix rather than to silence.
+GOLANGCI         := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+GOLANGCI_VERSION := latest
+
 .DEFAULT_GOAL := check
 
 ## test: run the pure packages on this machine, fast
@@ -44,13 +49,16 @@ report:
 		-commit "$$(git rev-parse --short HEAD 2>/dev/null)"
 	@echo "open test-report.html"
 
-## lint: vet + golangci-lint
+## lint: vet + golangci-lint (downloaded on demand if not installed)
 .PHONY: lint
 lint:
 	go vet $(PKGS)
-	@command -v golangci-lint >/dev/null 2>&1 \
-		|| { echo "golangci-lint not installed: https://golangci-lint.run/welcome/install/"; exit 1; }
-	golangci-lint run
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run $(PKGS); \
+	else \
+		echo "golangci-lint not installed; running it via go run"; \
+		GOFLAGS=-mod=mod go run $(GOLANGCI)@$(GOLANGCI_VERSION) run $(PKGS); \
+	fi
 
 ## tidy: go mod tidy must produce no diff
 .PHONY: tidy

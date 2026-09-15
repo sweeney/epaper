@@ -45,7 +45,7 @@ func main() {
 	//
 	// Both satisfy epaper.Device, so nothing below this changes.
 	dev := mock.New(400, 300, panelPalette)
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 
 	if err := drawAndShow(dev); err != nil {
 		log.Fatal(err)

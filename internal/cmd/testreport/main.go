@@ -43,7 +43,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		in = f
 	}
 
@@ -87,7 +87,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if err := render(out, run); err != nil {
-		out.Close()
+		_ = out.Close()
 		log.Fatal(err)
 	}
 	if err := out.Close(); err != nil {
@@ -103,7 +103,9 @@ func main() {
 			if err := writeSummary(f, run, *artifact); err != nil {
 				log.Printf("summary: %v (continuing)", err)
 			}
-			f.Close()
+			if err := f.Close(); err != nil {
+				log.Printf("summary: %v (continuing)", err)
+			}
 		}
 	}
 

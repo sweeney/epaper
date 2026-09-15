@@ -134,7 +134,8 @@ func OpenWith(opts Options) (epaper.Device, error) {
 
 	spi, err := spidev.Open(spidev.Config{Path: spiPath, Mode: spidev.Mode0, SpeedHz: speed})
 	if err != nil {
-		lines.Close()
+		// Give the lines back; the SPI failure is the one worth reporting.
+		_ = lines.Close()
 		return nil, err
 	}
 
@@ -147,7 +148,7 @@ func OpenWith(opts Options) (epaper.Device, error) {
 		BusyTimeout:  opts.BusyTimeout,
 	})
 	if err != nil {
-		c.Close()
+		_ = c.Close()
 		return nil, fmt.Errorf("inky: %w", err)
 	}
 	return dev, nil
@@ -162,7 +163,8 @@ func Identify(i2cPath string) (*EEPROM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inky: %w", err)
 	}
-	defer bus.Close()
+	// Read-only, so a close failure tells us nothing we can act on.
+	defer func() { _ = bus.Close() }()
 
 	raw, err := bus.ReadReg16(eepromAddr, 0x0000, eepromSize)
 	if err != nil {

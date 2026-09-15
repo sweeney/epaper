@@ -68,7 +68,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 
 	fmt.Printf("panel: %s %v\n", dev.Model(), dev.Bounds())
 

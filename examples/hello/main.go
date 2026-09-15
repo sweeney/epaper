@@ -26,7 +26,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 
 	// Bounds and palette both come from the device, so the image can never
 	// disagree with the panel it is going to.

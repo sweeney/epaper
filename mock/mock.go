@@ -170,8 +170,7 @@ func (d *Device) SavePNG(path string) error {
 		return fmt.Errorf("mock: save png: %w", err)
 	}
 	if err := png.Encode(f, last); err != nil {
-		f.Close()
-		return fmt.Errorf("mock: save png: %w", err)
+		return fmt.Errorf("mock: save png: %w", errors.Join(err, f.Close()))
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("mock: save png: %w", err)

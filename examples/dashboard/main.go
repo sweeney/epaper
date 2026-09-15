@@ -19,6 +19,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -78,7 +79,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 
 	c := render.NewCanvasFor(dev)
 	if err := Draw(c, status); err != nil {
@@ -184,7 +185,7 @@ func clamp(v float64) float64 {
 // hardware" path needs.
 func renderTo(w, h int, p epaper.Palette, s Status) (image.Image, error) {
 	dev := mock.New(w, h, p)
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 
 	c := render.NewCanvasFor(dev)
 	if err := Draw(c, s); err != nil {
@@ -225,8 +226,7 @@ func writePNG(path string, img image.Image) error {
 		return err
 	}
 	if err := png.Encode(f, img); err != nil {
-		f.Close()
-		return err
+		return errors.Join(err, f.Close())
 	}
 	return f.Close()
 }
