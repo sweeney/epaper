@@ -658,7 +658,11 @@ GitHub Actions, `.github/workflows/ci.yml`:
 
 Hardware tests are `//go:build hardware` and never run in CI.
 
-Branch protection: CI green before merge.
+~~Branch protection: CI green before merge.~~ **Decided against.** This is a
+single-maintainer repository and the check adds a click without adding a
+safeguard: a red run is visible on the commit either way, and the person who
+would be blocked is the person who would be clicking through. Revisit if
+anyone else starts pushing.
 
 ---
 
