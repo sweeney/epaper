@@ -952,8 +952,8 @@ Everything needed to pick this up cold.
 ### 11.1 The bench
 
 ```
-host    pi4b — 192.168.1.6 (wifi), tailnet 100.89.53.59
-ssh     sweeney@192.168.1.6   (key auth works; sudo needs a password)
+host    pi4b, reachable over wifi or the tailnet
+ssh     key auth works; sudo needs a password
 board   Raspberry Pi 4B Rev 1.5, Debian 13 trixie, kernel 6.18.34, aarch64
 panel   Inky wHAT 4.2", JD79668, on the GPIO header
 ```
