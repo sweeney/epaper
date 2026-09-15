@@ -169,10 +169,6 @@ func (c *Canvas) TextFitted(r image.Rectangle, s string, ff FontFamily, i epaper
 	return 0
 }
 
-// ErrTextDoesNotFit means a string could not be drawn inside the rectangle
-// given, at any font size. Match with [errors.Is] on [Canvas.Err].
-var ErrTextDoesNotFit = fmt.Errorf("render: text does not fit")
-
 // MeasureText returns the advance width of a string in pixels, kerning
 // included.
 //

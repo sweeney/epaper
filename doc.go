@@ -5,6 +5,22 @@
 // the consumer-facing API mentions SPI, GPIO, chip-select, bit packing or
 // refresh sequencing.
 //
+// # Proving a panel
+//
+// Before anything else, put the test card on it. If what appears looks like
+// the card, then the wiring, the transport, the command sequence, all four
+// inks, the dithering and the text rendering are all working:
+//
+//	dev, err := inky.Open()
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer dev.Close()
+//
+//	if err := testcard.Show(ctx, dev, "bench check"); err != nil {
+//		log.Fatal(err)
+//	}
+//
 // # The shape of it
 //
 // A [Device] is a panel. It reports its geometry and its [Palette], hands out
@@ -46,12 +62,22 @@
 // Every failure is a returned error. Nothing here calls os.Exit, and nothing
 // panics on hardware state — a library that kills its caller cannot be used in
 // a service. Anything that blocks takes a [context.Context]; a full refresh
-// takes around 25 seconds, which is far too long to be uncancellable.
+// takes around 20 seconds, which is far too long to be uncancellable.
 //
 // # Testing without hardware
 //
 // Most of this library is pure: inks, palettes, framebuffer packing, the render
 // toolkit and the EEPROM parser all run on a laptop. The mock package provides
-// a Device that records the frames it is shown, so a consumer can build and
-// test an entire display program with no Pi in the room.
+// a Device that records the frames it is shown, so a whole display program can
+// be built and tested with no Pi in the room — see examples/consumertest.
+//
+// This is not a fallback, it is the way to work. A refresh takes 20 seconds and
+// happens in another room; a PNG takes 20 milliseconds and can be diffed.
+//
+// # Text
+//
+// One thing is worth knowing before drawing any: below about 16px, a scaled
+// outline font cannot render legibly on a panel with no intermediate tones, and
+// no amount of tuning fixes it. Use a bitmap font. [render.FontFamily] explains
+// why, and testcard.Fonts is one that needs no font file.
 package epaper

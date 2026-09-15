@@ -50,9 +50,19 @@ import (
 	"github.com/sweeney/epaper"
 )
 
-// ErrInkUnavailable means a draw call named an ink the panel does not have.
-// Match with [errors.Is] on the result of [Canvas.Err].
-var ErrInkUnavailable = errors.New("render: ink not available on this palette")
+// Errors this package records on a [Canvas]. Match with [errors.Is] on the
+// result of [Canvas.Err].
+var (
+	// ErrInkUnavailable means a draw call named an ink the panel does not
+	// have. Nothing is substituted: a panel that looks plausible and is
+	// wrong is the worst outcome on a display nobody is watching.
+	ErrInkUnavailable = errors.New("render: ink not available on this palette")
+
+	// ErrTextDoesNotFit means a string could not be drawn in the space
+	// given — at any size for [Canvas.TextFitted], or in full for
+	// [Canvas.TextWrapped].
+	ErrTextDoesNotFit = errors.New("render: text does not fit")
+)
 
 // Canvas is a drawing surface bound to a panel's palette.
 //

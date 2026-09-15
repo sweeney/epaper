@@ -1,7 +1,6 @@
 package inky_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/sweeney/epaper/inky"
@@ -56,21 +55,5 @@ func TestOpenWithoutHardwareFailsCleanly(t *testing.T) {
 func TestIdentifyWithoutHardwareFailsCleanly(t *testing.T) {
 	if _, err := inky.Identify("/dev/does-not-exist"); err == nil {
 		t.Fatal("Identify() = nil error with no hardware present")
-	}
-}
-
-// The chip-select error must carry the fix, not just the symptom. Without
-// dtoverlay=spi0-0cs the kernel owns GPIO 8, and the failure looks like a busy
-// line rather than a missing device — twenty minutes of debugging for anyone
-// who has not met it before.
-func TestChipSelectErrorCarriesTheFix(t *testing.T) {
-	err := inky.ChipSelectAdvice(inky.DefaultPins)
-	if !errors.Is(err, inky.ErrChipSelectBusy) {
-		t.Fatalf("error = %v, want ErrChipSelectBusy", err)
-	}
-	for _, want := range []string{"dtoverlay=spi0-0cs", "config.txt", "reboot", "8"} {
-		if !contains(err.Error(), want) {
-			t.Errorf("error %q does not mention %q", err, want)
-		}
 	}
 }

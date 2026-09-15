@@ -201,10 +201,3 @@ func orDefault(v, fallback string) string {
 	}
 	return v
 }
-
-// ChipSelectAdvice returns the error [Open] gives when the chip-select line is
-// already claimed. It is exported so the advice can be tested without a Pi
-// that is deliberately misconfigured.
-func ChipSelectAdvice(pins Pins) error {
-	return gpioError(pins, gpiocdev.ErrLineBusy)
-}

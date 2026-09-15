@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -578,3 +579,55 @@ func TestVendorCommandDelayIsHonoured(t *testing.T) {
 		t.Errorf("a refresh with a 20ms command delay took %s; the delay is being ignored", elapsed)
 	}
 }
+
+// Show is documented as safe for concurrent use, and PLAN §9.6 explains why
+// that matters: a service with a ticker and a webhook both drawing would
+// otherwise interleave two framebuffers into one picture — 25 seconds later,
+// intermittently, on a display nobody is watching.
+//
+// The assertion is not merely "no data race". It is that each refresh's
+// operations arrive as one unbroken run, which is what serialising buys you.
+func TestShowSerialisesConcurrentCallers(t *testing.T) {
+	conn := &recordingConn{}
+	d := newDevice(t, conn)
+
+	const callers = 8
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := d.Show(context.Background(), d.NewImage()); err != nil {
+				t.Errorf("Show(): %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Every refresh begins with a reset and ends with DSLP. If two had
+	// interleaved, the ops between a reset and its DSLP would not be a whole
+	// refresh.
+	const opsPerRefresh = 20
+	if got, want := len(conn.ops), callers*opsPerRefresh; got != want {
+		t.Fatalf("%d operations from %d refreshes, want %d", got, callers, want)
+	}
+	for i := 0; i < len(conn.ops); i += opsPerRefresh {
+		refresh := conn.ops[i : i+opsPerRefresh]
+		if refresh[0].kind != "reset" {
+			t.Fatalf("refresh starting at op %d begins with %v, want reset — the refreshes interleaved", i, refresh[0])
+		}
+		last := refresh[opsPerRefresh-1]
+		if last.kind != "cmd" || last.cmd != cmdDSLP {
+			t.Fatalf("refresh starting at op %d ends with %v, want deep sleep", i, last)
+		}
+		for _, o := range refresh[1 : opsPerRefresh-1] {
+			if o.kind == "reset" {
+				t.Fatalf("a second reset appeared inside the refresh starting at op %d", i)
+			}
+		}
+	}
+}
+
+// cmdDSLP is unexported, so mirror it here rather than reaching in. If the
+// driver ever changed it, the sequence test would fail first and loudly.
+const cmdDSLP = 0x07
