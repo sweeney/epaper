@@ -14,6 +14,7 @@ make test     # pure packages, fast, no hardware
 make check    # everything CI runs: tidy, lint, test, cross-compile
 make golden   # regenerate testdata/golden — then LOOK at the diff
 make report   # run the tests and build test-report.html
+make fuzz     # a short run over the parsers
 ```
 
 `make report` writes a self-contained HTML page: results, per-package
@@ -42,16 +43,24 @@ Red-green, throughout. The failing test is written and seen to fail before the
 implementation exists. This is not ceremony: on hardware with a 20-second
 feedback loop, a test that has never failed is a test you cannot trust.
 
-Two habits that have already paid for themselves:
+Three habits that have already paid for themselves:
 
 - **When a test passes first time, break something and check it fails.** The
   driver's command-sequence test was verified this way — changing one payload
-  byte from `0x37` to `0x38` must fail, and it does.
+  byte from `0x37` to `0x38` must fail, and it does. The concurrency test was
+  verified by removing the mutex; the packing optimisation, by the conformance
+  fixture it could not have passed by accident.
 - **Look at every golden you regenerate.** A golden accepted without being
   looked at asserts nothing at all; it records whatever the code does today,
   including the bug you were about to find. Reviewing them has caught an
-  invisible crosshair, a legibility ladder drawn over a pixel grid, and text
-  with strokes missing.
+  invisible crosshair, a legibility ladder drawn over a pixel grid, a ladder
+  showing the same size twice, and text with strokes missing.
+- **Judge rendering on the panel, not on a preview.** A PNG at 2× on a bright
+  screen flatters exactly the defects that ruin small text on 1-bit hardware.
+  Small text was declared fixed twice from a preview and was wrong both times;
+  a photograph of the panel settled it in one look. A refresh costs 20 seconds,
+  which is cheap next to being wrong — and several candidates drawn on **one**
+  card answers the question in a single refresh.
 
 ### Fixtures are oracles
 
@@ -97,6 +106,25 @@ to your driver. If your board is not a Pimoroni one, write a sibling of the
 deliberately no driver registry and no capability negotiation. With two real
 implementations in hand there is something to abstract *from*; with one there
 is only guesswork.
+
+## Adding text
+
+Use a bitmap font below about 16px. This is not a preference:
+
+A scaled outline font cannot render small text on a display with no
+intermediate tones. A stem is roughly one pixel wide and lands at an arbitrary
+sub-pixel position, so after thresholding some stems come out one pixel wide
+and their neighbours two. It reads as bad letter-spacing rather than as missing
+ink, which is why it is easy to misdiagnose — and no threshold fixes it, since
+raising it drops strokes and lowering it doubles them. Both were shipped here
+before the cause was understood.
+
+Hinting is what would solve it, and FreeType does it well, which is why the
+same text looks fine from Python. `x/image`'s hinting does not at these sizes.
+
+`render.ScaleFace` scales a bitmap face by whole multiples for large text, so a
+heading is exactly as crisp as the body. `render.FontFamily` documents the
+whole rule.
 
 ## Adding a drawing primitive
 
