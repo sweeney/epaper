@@ -59,6 +59,35 @@ const (
 	eepromAddr = 0x50
 )
 
+// The transports, indirected so the wiring above them can be tested.
+//
+// What OpenWith does between reading the EEPROM and returning a device is
+// exactly the part worth checking and the hardest to check on hardware: which
+// pins get claimed, at what INITIAL levels — claiming reset or chip select
+// low would pulse the panel before the driver has said anything — and whether
+// the panel's own geometry reaches the driver. None of that produces an error
+// when it is wrong; it produces a panel that misbehaves.
+//
+// Wrapped rather than assigned directly so that a nil *gpiocdev.Lines cannot
+// become a non-nil interface holding a nil pointer.
+var (
+	openGPIO = func(cfg gpiocdev.Config) (gpioLines, error) {
+		l, err := gpiocdev.Open(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return l, nil
+	}
+	openSPI = func(cfg spidev.Config) (spiWriter, error) {
+		d, err := spidev.Open(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return d, nil
+	}
+	identify = Identify
+)
+
 // Options tunes [OpenWith]. The zero value is what [Open] uses.
 type Options struct {
 	// SPIPath, I2CPath and Pins override the board defaults.
@@ -105,7 +134,7 @@ func OpenWith(opts Options) (epaper.Device, error) {
 		speed = DefaultSPISpeedHz
 	}
 
-	info, err := Identify(i2cPath)
+	info, err := identify(i2cPath)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +146,7 @@ func OpenWith(opts Options) (epaper.Device, error) {
 			info.Model, info.DisplayVariant, ErrUnsupportedPanel)
 	}
 
-	lines, err := gpiocdev.Open(gpiocdev.Config{
+	lines, err := openGPIO(gpiocdev.Config{
 		Consumer: "epaper",
 		// Initial values matter: chip select and reset are active low and
 		// must start released, or the panel sees a spurious pulse between
@@ -133,7 +162,7 @@ func OpenWith(opts Options) (epaper.Device, error) {
 		return nil, gpioError(pins, err)
 	}
 
-	spi, err := spidev.Open(spidev.Config{Path: spiPath, Mode: spidev.Mode0, SpeedHz: speed})
+	spi, err := openSPI(spidev.Config{Path: spiPath, Mode: spidev.Mode0, SpeedHz: speed})
 	if err != nil {
 		// Give the lines back; the SPI failure is the one worth reporting.
 		_ = lines.Close()

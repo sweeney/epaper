@@ -4,6 +4,7 @@ package spidev
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -95,9 +96,22 @@ func (d *Device) Write(b []byte) error {
 	if d.f == nil {
 		return fmt.Errorf("spidev: write: device is closed")
 	}
+	return writeChunks(d.f, b, d.chunkSize)
+}
+
+// writeChunks splits a buffer into transfers the kernel will accept.
+//
+// Separate from [Device.Write] so it can be tested without a real SPI device.
+// It is worth testing: the framebuffer is 30,000 bytes against a default
+// bufsiz of 4096, so every refresh goes through this loop eight times, and an
+// off-by-one here reaches the panel as a corrupted image rather than an error.
+func writeChunks(w io.Writer, b []byte, chunkSize int) error {
+	if chunkSize <= 0 {
+		return fmt.Errorf("spidev: write: chunk size %d is not usable", chunkSize)
+	}
 	for len(b) > 0 {
-		n := min(len(b), d.chunkSize)
-		if _, err := d.f.Write(b[:n]); err != nil {
+		n := min(len(b), chunkSize)
+		if _, err := w.Write(b[:n]); err != nil {
 			return fmt.Errorf("spidev: write %d bytes: %w", n, err)
 		}
 		b = b[n:]

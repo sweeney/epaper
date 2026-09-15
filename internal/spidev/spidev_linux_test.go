@@ -3,8 +3,11 @@
 package spidev
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -118,4 +121,128 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// recordingWriter keeps each Write separately, which is the only way to see
+// how a buffer was split.
+type recordingWriter struct {
+	writes  [][]byte
+	failAt  int // 1-based call to fail on; 0 means never
+	calls   int
+	failErr error
+}
+
+func (r *recordingWriter) Write(p []byte) (int, error) {
+	r.calls++
+	if r.failAt != 0 && r.calls == r.failAt {
+		return 0, r.failErr
+	}
+	r.writes = append(r.writes, append([]byte(nil), p...))
+	return len(p), nil
+}
+
+// The framebuffer is 30,000 bytes and the default bufsiz is 4096, so every
+// refresh goes through this loop eight times. A write longer than bufsiz is
+// rejected by the kernel; a short one silently truncates the image.
+func TestWriteChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		total     int
+		chunk     int
+		wantCalls int
+	}{
+		{"the real framebuffer", 30000, 4096, 8},
+		{"exactly one chunk", 4096, 4096, 1},
+		{"one byte over", 4097, 4096, 2},
+		{"one byte under", 4095, 4096, 1},
+		{"smaller than a chunk", 10, 4096, 1},
+		{"a single byte", 1, 4096, 1},
+		{"chunk of one", 5, 1, 5},
+		{"a larger bufsiz", 30000, 65536, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Fill with a recognisable pattern so reassembly is meaningful.
+			src := make([]byte, tc.total)
+			for i := range src {
+				src[i] = byte(i)
+			}
+
+			w := &recordingWriter{}
+			if err := writeChunks(w, src, tc.chunk); err != nil {
+				t.Fatalf("writeChunks(): %v", err)
+			}
+
+			if len(w.writes) != tc.wantCalls {
+				t.Errorf("%d writes, want %d", len(w.writes), tc.wantCalls)
+			}
+			// No single write may exceed the chunk size, or the kernel
+			// rejects it.
+			for i, chunk := range w.writes {
+				if len(chunk) > tc.chunk {
+					t.Errorf("write %d is %d bytes, over the %d limit", i, len(chunk), tc.chunk)
+				}
+				if len(chunk) == 0 {
+					t.Errorf("write %d is empty", i)
+				}
+			}
+			// And the pieces must reassemble into exactly the original: a
+			// dropped or duplicated byte shifts every pixel after it.
+			var got []byte
+			for _, chunk := range w.writes {
+				got = append(got, chunk...)
+			}
+			if !bytes.Equal(got, src) {
+				t.Errorf("reassembled %d bytes, want %d, equal=%v", len(got), len(src), bytes.Equal(got, src))
+			}
+		})
+	}
+}
+
+func TestWriteChunksEmpty(t *testing.T) {
+	w := &recordingWriter{}
+	if err := writeChunks(w, nil, 4096); err != nil {
+		t.Fatalf("writeChunks(nil): %v", err)
+	}
+	if len(w.writes) != 0 {
+		t.Errorf("%d writes for an empty buffer, want 0", len(w.writes))
+	}
+}
+
+// A failure part-way through must be reported, not swallowed — a partially
+// written framebuffer is a corrupted image.
+func TestWriteChunksReportsFailure(t *testing.T) {
+	boom := errors.New("EIO")
+	w := &recordingWriter{failAt: 3, failErr: boom}
+
+	err := writeChunks(w, make([]byte, 30000), 4096)
+	if !errors.Is(err, boom) {
+		t.Fatalf("writeChunks() = %v, want the underlying error", err)
+	}
+	if !strings.Contains(err.Error(), "4096") {
+		t.Errorf("error %q does not say how much it was writing", err)
+	}
+}
+
+// A non-positive chunk size would loop forever. readBufsiz cannot produce one,
+// but the guard is cheap and the failure mode is a hung refresh.
+func TestWriteChunksRejectsABadChunkSize(t *testing.T) {
+	for _, size := range []int{0, -1} {
+		if err := writeChunks(&recordingWriter{}, []byte{1, 2, 3}, size); err == nil {
+			t.Errorf("writeChunks(chunk=%d) = nil error; that would loop forever", size)
+		}
+	}
+}
+
+// Write on a closed device must report, not panic on a nil file.
+func TestWriteAfterClose(t *testing.T) {
+	d := &Device{}
+	if err := d.Write([]byte{1}); err == nil {
+		t.Error("Write() on a closed device = nil error")
+	}
+	if err := d.Close(); err != nil {
+		t.Errorf("Close() on a never-opened device = %v", err)
+	}
+	if got := d.ChunkSize(); got != 0 {
+		t.Errorf("ChunkSize() on a zero Device = %d", got)
+	}
 }

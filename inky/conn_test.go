@@ -28,6 +28,7 @@ func (e event) String() string {
 
 type fakeBus struct {
 	events []event
+	closed int
 	busy   []int // values Get returns in turn; the last repeats
 	failOn int   // 1-based call index to fail; 0 means never
 	calls  int
@@ -69,7 +70,7 @@ func (f *fakeBus) Get(int) (int, error) {
 	return v, nil
 }
 
-func (f *fakeBus) Close() error { return nil }
+func (f *fakeBus) Close() error { f.closed++; return nil }
 
 func newConn(f *fakeBus) *conn {
 	return &conn{spi: f, gpio: f, pins: DefaultPins}
@@ -220,5 +221,52 @@ func assertEvents(t *testing.T, got, want []event) {
 	}
 	if len(got) != len(want) {
 		t.Fatalf("%d events, want %d", len(got), len(want))
+	}
+}
+
+// Chip select must be released on EVERY failure path, not just the one
+// convenient to test. Leaving the bus held makes every later command fail for
+// a different reason, hiding the one that actually happened.
+func TestCommandAlwaysReleasesChipSelect(t *testing.T) {
+	boom := errors.New("transport failure")
+
+	// Walk the failure point through the whole call: assert CS, set DC, write
+	// the command, set DC for data, write the data, set DC back.
+	for failAt := 1; failAt <= 6; failAt++ {
+		f := &fakeBus{failOn: failAt, err: boom}
+
+		err := newConn(f).Command(0x10, []byte{0x01, 0x02})
+		if failAt == 1 {
+			// The very first call IS the chip-select assert, so there is
+			// nothing to release; it must still report.
+			if !errors.Is(err, boom) {
+				t.Errorf("failAt=1: Command() = %v, want the transport error", err)
+			}
+			continue
+		}
+		if !errors.Is(err, boom) {
+			t.Errorf("failAt=%d: Command() = %v, want the transport error", failAt, err)
+			continue
+		}
+		if len(f.events) == 0 {
+			t.Errorf("failAt=%d: nothing was recorded", failAt)
+			continue
+		}
+		last := f.events[len(f.events)-1]
+		if last.kind != "set" || last.line != DefaultPins.ChipSelect || last.value != release {
+			t.Errorf("failAt=%d: last event was %v, want chip select released", failAt, last)
+		}
+	}
+}
+
+// A reset that cannot drive the line has to report rather than carry on into
+// an init sequence the panel never saw.
+func TestResetReportsFailure(t *testing.T) {
+	boom := errors.New("line gone")
+	for failAt := 1; failAt <= 2; failAt++ {
+		f := &fakeBus{failOn: failAt, err: boom}
+		if err := newConn(f).Reset(context.Background()); !errors.Is(err, boom) {
+			t.Errorf("failAt=%d: Reset() = %v, want the transport error", failAt, err)
+		}
 	}
 }
