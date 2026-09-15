@@ -47,19 +47,6 @@ jobs:
             -artifact "test-report"
         continue-on-error: true
 
-      # The step summary has no API, so its absence would be invisible.
-      # Logging its size means a silent failure to write one shows up here
-      # rather than as someone wondering where the report went.
-      - name: check the summary was written
-        if: always()
-        run: |
-          if [ -s "${GITHUB_STEP_SUMMARY}" ]; then
-            echo "step summary: $(wc -c < "${GITHUB_STEP_SUMMARY}") bytes, $(grep -c '' "${GITHUB_STEP_SUMMARY}") lines"
-            echo "first lines:"
-            head -6 "${GITHUB_STEP_SUMMARY}"
-          else
-            echo "::warning::the step summary is empty; the run page will show nothing"
-          fi
 
       # always(): a failing run is the one you most want to look at.
       - name: upload report

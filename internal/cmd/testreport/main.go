@@ -14,6 +14,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sort"
@@ -97,16 +98,27 @@ func main() {
 
 	if *summary != "" {
 		// Append: a workflow may write several sections to the same file.
+		//
+		// Note that GitHub gives each STEP its own summary file and
+		// concatenates them for the job, so a later step cannot inspect what
+		// this one wrote. That is why the size is reported here rather than
+		// checked afterwards — a check in a separate step reads a different,
+		// empty file and reports a failure that did not happen.
 		f, err := os.OpenFile(*summary, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			log.Printf("summary: %v (continuing)", err)
 		} else {
+			var counted countingWriter
 			opts := SummaryOptions{Repo: *repo, SHA: *commit, Artifact: *artifact}
-			if err := writeSummary(f, run, opts); err != nil {
+			if err := writeSummary(io.MultiWriter(f, &counted), run, opts); err != nil {
 				log.Printf("summary: %v (continuing)", err)
 			}
 			if err := f.Close(); err != nil {
 				log.Printf("summary: %v (continuing)", err)
+			}
+			fmt.Printf("wrote %d bytes of Markdown summary to %s\n", counted.n, *summary)
+			if counted.n == 0 {
+				log.Print("the summary is empty; the run page will show nothing")
 			}
 		}
 	}
@@ -119,4 +131,13 @@ func main() {
 	if run.Failed > 0 {
 		os.Exit(1)
 	}
+}
+
+// countingWriter records how much was written, so the job log can show that
+// the summary was produced. There is no API for reading a step summary back.
+type countingWriter struct{ n int }
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.n += len(p)
+	return len(p), nil
 }
