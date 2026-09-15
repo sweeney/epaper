@@ -105,3 +105,37 @@ func (b *Bus) Close() error {
 	}
 	return nil
 }
+
+// The ioctl structs go straight to the kernel, so their layout must match the
+// C definitions exactly. A mismatch does not fail loudly — the kernel reads a
+// pointer from the wrong offset and the transfer returns garbage, which looks
+// exactly like the seating fault the bench already chased once on good
+// hardware.
+//
+// These are compile-time assertions, so `GOARCH=arm go build` proves the
+// 32-bit layout without anyone owning a Pi Zero to run it on. If a size is
+// wrong, one of the subtractions below is negative and converting it to uint
+// will not compile.
+const (
+	ptrSize = unsafe.Sizeof(uintptr(0))
+
+	// struct i2c_msg: u16 addr, u16 flags, u16 len, then a pointer aligned
+	// to its own width. 12 bytes on 32-bit, 16 on 64-bit.
+	wantMsgSize = ((6+ptrSize-1)/ptrSize)*ptrSize + ptrSize
+
+	// struct i2c_rdwr_ioctl_data: a pointer then a u32, padded to the
+	// pointer's alignment. 8 bytes on 32-bit, 16 on 64-bit.
+	wantRdwrSize = ((ptrSize + 4 + ptrSize - 1) / ptrSize) * ptrSize
+)
+
+const (
+	_ = uint(unsafe.Sizeof(i2cMsg{}) - wantMsgSize)
+	_ = uint(wantMsgSize - unsafe.Sizeof(i2cMsg{}))
+	_ = uint(unsafe.Sizeof(i2cRdwrData{}) - wantRdwrSize)
+	_ = uint(wantRdwrSize - unsafe.Sizeof(i2cRdwrData{}))
+
+	// The pointer must sit at offset 8 in i2c_msg on every platform we
+	// build for; anything else means the kernel reads a shifted address.
+	_ = uint(unsafe.Offsetof(i2cMsg{}.buf) - 8)
+	_ = uint(8 - unsafe.Offsetof(i2cMsg{}.buf))
+)

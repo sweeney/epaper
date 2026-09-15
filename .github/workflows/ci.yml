@@ -102,6 +102,28 @@ jobs:
           CGO_ENABLED: "0"   # a static binary, cross-compiled, no toolchain on the Pi
         run: go build ./...
 
+  fuzz:
+    # A short smoke run, not a fuzzing campaign: enough to catch a crash
+    # introduced since the last one, cheap enough to run on every push.
+    name: fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: fuzz the EEPROM parser
+        run: go test ./inky -run FuzzParseEEPROM -fuzz FuzzParseEEPROM -fuzztime 45s
+      - name: fuzz the framebuffer packer
+        run: go test . -run FuzzPack -fuzz FuzzPack -fuzztime 45s
+      - name: upload crashers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers
+          path: testdata/fuzz/
+          if-no-files-found: ignore
+
   hardware-compiles:
     # The hardware tests never RUN in CI, but they must keep compiling, or
     # they rot quietly and the next bench session starts with a build error.
@@ -117,6 +139,15 @@ jobs:
           GOARCH: arm64
           CGO_ENABLED: "0"
         run: go test -c -tags hardware -o /dev/null ./hwtest
+
+      # The ioctl structs carry compile-time layout assertions, so building
+      # for 32-bit ARM is what proves the Pi Zero case. Nobody here has one.
+      - name: ioctl layout on 32-bit ARM
+        env:
+          GOOS: linux
+          GOARCH: arm
+          CGO_ENABLED: "0"
+        run: go build ./internal/...
 
   lint:
     name: lint
