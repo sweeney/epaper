@@ -35,9 +35,11 @@ package testcard
 
 import (
 	"image"
+	"strings"
 
 	"github.com/sweeney/epaper"
 	"github.com/sweeney/epaper/render"
+	"golang.org/x/image/font"
 )
 
 // Layout constants. The card is designed for 400x300 and scales nothing; a
@@ -291,26 +293,32 @@ func drawCircle(c *render.Canvas, fonts render.FontFamily, model, note string) {
 
 	if fonts != nil {
 		y = fitLine(c, fonts, y, 20, "TEST CARD", epaper.Red)
-		y = fitLine(c, fonts, y+2, 13, model, epaper.Black)
+
+		// The model name comes from an EEPROM and can be longer than the
+		// circle is wide — "Red/Yellow wHAT (JD79668)" in a monospace bitmap
+		// face needs 175px and the circle is 156 at its widest. Wrap it
+		// rather than shrink it into illegibility, which is the whole point
+		// of using a bitmap face here.
+		y = drawWrapped(c, fonts, y+2, model, epaper.Black)
 		if note != "" {
-			y = fitLine(c, fonts, y+1, 11, note, epaper.Black)
+			y = drawWrapped(c, fonts, y+1, note, epaper.Black)
 		}
 
-		// A legibility ladder. The bench found 10px readable and 8px not, so
-		// the smallest line here is expected to be a smudge — that is the
-		// measurement, not a defect.
-		for _, size := range []int{12, 10, 8} {
+		// A legibility ladder, smallest last. These are the faces the family
+		// actually hands out, so the card shows what the library will really
+		// draw at each size.
+		for _, size := range []int{16, 13} {
 			f, err := fonts(size)
 			if err != nil {
 				break
 			}
 			lh := render.LineHeight(f)
 			half := inscribedHalfWidth(maxAbs(y-CircleY, y+lh-CircleY))
-			text := "Hamburgefonstiv 0123"
+			text := "Hamburgefonstiv"
 			if render.MeasureText(text, f) > 2*half {
-				text = "Hamburgefonstiv"
+				text = "Hamburgef"
 			}
-			c.Text(image.Pt(CircleX-half, y), text, f, epaper.Black)
+			c.Text(image.Pt(CircleX-render.MeasureText(text, f)/2, y), text, f, epaper.Black)
 			y += lh + 1
 		}
 		y += 3
@@ -332,6 +340,53 @@ func drawCircle(c *render.Canvas, fonts render.FontFamily, model, note string) {
 		c.Rect(image.Rect(CircleX+1, y, CircleX+half, y+patchH), epaper.Red)
 		c.StrokeRect(image.Rect(CircleX-half, y, CircleX+half, y+patchH), epaper.Black)
 	}
+}
+
+// drawWrapped draws a string inside the circle, breaking it across lines when
+// it will not fit on one, and returns the y below the last line.
+//
+// Each line is measured against the circle's width at its own height, and
+// centred. A word longer than the line is left to overflow the wrap rather
+// than being cut, because a truncated model number is worse than a wide one —
+// and the containment test would catch it if it ever left the disc.
+func drawWrapped(c *render.Canvas, fonts render.FontFamily, y int, s string, ink epaper.Ink) int {
+	f, err := fonts(13)
+	if err != nil {
+		return y
+	}
+	lh := render.LineHeight(f)
+
+	for _, line := range wrapToCircle(s, f, y, lh) {
+		w := render.MeasureText(line, f)
+		c.Text(image.Pt(CircleX-w/2, y), line, f, ink)
+		y += lh
+	}
+	return y
+}
+
+// wrapToCircle breaks s into lines that fit the circle at successive heights.
+func wrapToCircle(s string, f font.Face, y, lineHeight int) []string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+	var lines []string
+	cur := ""
+	for _, word := range words {
+		width := 2 * inscribedHalfWidth(maxAbs(y-CircleY, y+lineHeight-CircleY))
+		candidate := word
+		if cur != "" {
+			candidate = cur + " " + word
+		}
+		if render.MeasureText(candidate, f) <= width || cur == "" {
+			cur = candidate
+			continue
+		}
+		lines = append(lines, cur)
+		y += lineHeight
+		cur = word
+	}
+	return append(lines, cur)
 }
 
 // fitLine draws one centred line inside the circle and returns the y below it.

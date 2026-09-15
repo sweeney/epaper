@@ -36,15 +36,34 @@ const alphaThreshold = 0x5555
 // their lifetime belongs to whoever made them, and closing a cached face would
 // break the next caller.
 //
-// # Build faces with hinting OFF
+// # Use a BITMAP font for small text
 //
-// Counter-intuitively, [font.HintingNone] produces markedly more legible small
-// text here than [font.HintingFull] does. Hinting exists to snap stems to the
-// pixel grid, which ought to be exactly what a 1-bit display wants, but
-// x/image's implementation distorts glyph shapes at small ppem and rounds
-// every advance to a whole pixel, which makes spacing visibly uneven. The
-// unhinted outline, thresholded, comes out both better shaped and better
-// spaced. Compared by eye at 8, 10, 12 and 14px.
+// This is the single most important thing to get right, and it was learned
+// the hard way on the panel.
+//
+// A scaled outline font cannot render small text well on a display with no
+// intermediate tones. Below roughly 16px a stem is about one pixel wide and
+// lands at an arbitrary sub-pixel position, so after thresholding some stems
+// come out one pixel wide and their neighbours two. Stroke weights vary
+// letter to letter, curves blob, and the result reads as bad spacing even
+// though the advances are correct. No choice of threshold fixes it: raise it
+// and strokes vanish, lower it and they double.
+//
+// Hinting is supposed to solve exactly this by snapping stems to the pixel
+// grid, and FreeType does it well — which is why the same text looks fine
+// from Python. x/image's hinting does not, at these sizes.
+//
+// A bitmap font has no such problem: every glyph was drawn on the pixel grid
+// by hand. golang.org/x/image ships three, and any of them beats a scaled
+// outline at small sizes:
+//
+//	basicfont.Face7x13
+//	inconsolata.Regular8x16
+//	inconsolata.Bold8x16
+//
+// Outline fonts are fine above ~16px, where stems cover whole pixels anyway.
+// A good [FontFamily] therefore returns bitmap faces for small sizes and
+// scales an outline above them.
 type FontFamily func(sizePx int) (font.Face, error)
 
 // Text draws a single line of text with its top-left corner at p.
