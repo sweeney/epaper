@@ -28,10 +28,8 @@ import (
 
 	"github.com/sweeney/epaper"
 	"github.com/sweeney/epaper/inky"
-	"github.com/sweeney/epaper/internal/conformance"
-	"github.com/sweeney/epaper/internal/testcard"
 	"github.com/sweeney/epaper/render"
-	"golang.org/x/image/font/gofont/goregular"
+	"github.com/sweeney/epaper/testcard"
 )
 
 func main() {
@@ -104,13 +102,9 @@ func draw(bounds image.Rectangle, palette epaper.Palette, pattern, model, note s
 	c := render.NewCanvas(bounds, palette)
 	switch pattern {
 	case "conformance":
-		conformance.Draw(c)
+		testcard.DrawConformance(c)
 	default:
-		fonts, err := testcard.Fonts(goregular.TTF)
-		if err != nil {
-			return nil, err
-		}
-		testcard.Draw(c, fonts, model, note)
+		testcard.Draw(c, testcard.Options{Lines: []string{model, note}})
 	}
 	if err := c.Err(); err != nil {
 		return nil, err

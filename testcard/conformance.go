@@ -1,14 +1,5 @@
-// Package conformance draws the pattern that testdata/conformance pins.
-//
-// It lives in its own package rather than in a test file because three
-// separate things need it: the render tests that compare it against the
-// fixture byte for byte, the epaper-testcard command, and the hardware
-// acceptance test. One copy means they cannot drift apart.
-//
-// Every shape follows a rule written down in testdata/README.md. Nothing here
-// is tuned to match the fixture: if the two disagree, one of them is wrong,
-// and the render test's failure message says which band to look at.
-package conformance
+// The conformance pattern. The package doc is in testcard.go.
+package testcard
 
 import (
 	"image"
@@ -17,7 +8,17 @@ import (
 	"github.com/sweeney/epaper/render"
 )
 
-func Draw(c *render.Canvas) {
+// DrawConformance paints the pattern that testdata/conformance pins.
+//
+// Unlike [Draw] it contains no text, which is what makes it byte-comparable
+// against the vendor library's output: Pillow and x/image rasterise glyphs
+// differently, and no text-bearing image can ever match across the two. Every
+// shape follows an integer rule written down in testdata/README.md.
+//
+// Use it to check a port, or to check wiring: the four single-pixel corner
+// markers catch flips and transpositions that leave the rest of the pattern
+// looking entirely plausible.
+func DrawConformance(c *render.Canvas) {
 	const w, h = 400, 300
 
 	// The generator starts from a white buffer; a Go canvas starts at index 0,

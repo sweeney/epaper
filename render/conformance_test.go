@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/sweeney/epaper"
-	"github.com/sweeney/epaper/internal/conformance"
 	"github.com/sweeney/epaper/render"
+	"github.com/sweeney/epaper/testcard"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -25,7 +25,7 @@ func fixture(t *testing.T, name string) []byte {
 // names the band. See testdata/README.md §2.
 func TestConformanceRender(t *testing.T) {
 	c := render.NewCanvas(image.Rect(0, 0, 400, 300), fourInk)
-	conformance.Draw(c)
+	testcard.DrawConformance(c)
 	if err := c.Err(); err != nil {
 		t.Fatalf("Err() = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestConformanceRender(t *testing.T) {
 // root package, so a failure here after that one passes is a drawing bug.
 func TestConformanceEndToEnd(t *testing.T) {
 	c := render.NewCanvas(image.Rect(0, 0, 400, 300), fourInk)
-	conformance.Draw(c)
+	testcard.DrawConformance(c)
 	if err := c.Err(); err != nil {
 		t.Fatalf("Err() = %v", err)
 	}

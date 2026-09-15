@@ -507,6 +507,7 @@ epaper/
   palette.go              Palette, Entry, Index/Has/NearestTo     [pure]
   framebuffer.go          image.Paletted -> packed 2bpp bytes   [pure]
   render/                 Canvas and drawing primitives          [pure]
+  testcard/               the visual acceptance card             [pure]
   mock/                   in-memory Device                       [pure]
   driver/jd79668/         the controller driver
   inky/                   EEPROM detect + Pimoroni pin map -> Open()

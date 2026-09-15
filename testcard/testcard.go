@@ -34,6 +34,8 @@
 package testcard
 
 import (
+	"context"
+	"fmt"
 	"image"
 	"strings"
 
@@ -48,21 +50,88 @@ const (
 	border = 12 // castellation thickness
 	castle = 25 // castellation block pitch
 
-	// CircleR, CircleX and CircleY describe the central disc. They are
-	// exported so a test can assert that nothing drawn for the circle
-	// escapes it.
-	CircleR = 78 // ~52% of the panel height, as the original
-	CircleX = 200
-	CircleY = 148
+	// The central disc.
+	circleR = 78 // ~52% of the panel height, as the original
+	circleX = 200
+	circleY = 148
 )
 
-// Draw paints the test card. model and note are shown on the card, so a
-// photograph of the panel records what produced it.
+// DefaultTitle is the heading drawn in the circle when [Options.Title] is
+// empty.
+const DefaultTitle = "TEST CARD"
+
+// Options tunes the card. The zero value is valid: it draws the default
+// heading using the built-in bitmap fonts, and needs no font file.
+type Options struct {
+	// Title is the heading inside the circle. Empty means [DefaultTitle].
+	Title string
+
+	// Lines are printed under the title, top to bottom. A line too wide for
+	// the circle is wrapped on spaces rather than shrunk, because shrinking
+	// it would defeat the legibility this card exists to demonstrate.
+	//
+	// This is where to put whatever identifies the run: the panel model, a
+	// timestamp, a build number, the name of the thing being tested. A
+	// photograph of the panel then records what produced it.
+	Lines []string
+
+	// Fonts supplies the faces. Nil means [Fonts], which needs no font file.
+	//
+	// Set it to draw the card in your own typeface — but read
+	// [render.FontFamily] first, because a scaled outline font cannot render
+	// the small labels legibly on a panel with no intermediate tones.
+	Fonts render.FontFamily
+
+	// NoText draws the card without any words at all. Every diagnostic
+	// element still works; you lose the title, the lines and the legibility
+	// ladder, which are the only parts that need a font.
+	NoText bool
+}
+
+// Show draws the card on a device and refreshes it.
 //
-// fonts may be nil, in which case the card is drawn without any text. Every
-// diagnostic element still works; only the labels and the legibility ladder
-// are lost.
-func Draw(c *render.Canvas, fonts render.FontFamily, model, note string) {
+// This is the one-liner for proving a panel: if what appears looks like the
+// card, then the wiring, the transport, the command sequence, all four inks,
+// the dithering and the text rendering are all working. A full refresh takes
+// around 25 seconds.
+//
+// The device's model name is printed first, followed by any lines given.
+//
+//	dev, err := inky.Open()
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer dev.Close()
+//
+//	if err := testcard.Show(ctx, dev, time.Now().Format(time.RFC3339)); err != nil {
+//		log.Fatal(err)
+//	}
+func Show(ctx context.Context, d epaper.Device, lines ...string) error {
+	c := render.NewCanvasFor(d)
+	Draw(c, Options{Lines: append([]string{d.Model()}, lines...)})
+	if err := c.Err(); err != nil {
+		return fmt.Errorf("testcard: drawing: %w", err)
+	}
+	return d.Show(ctx, c.Image())
+}
+
+// Draw paints the test card into a canvas.
+//
+// It is designed for 400x300 and scales nothing: a larger panel gets the same
+// elements in the same places, and a smaller one gets them clipped.
+func Draw(c *render.Canvas, opts Options) {
+	fonts := opts.Fonts
+	if fonts == nil {
+		fonts = Fonts()
+	}
+	if opts.NoText {
+		fonts = nil
+	}
+	title := opts.Title
+	if title == "" {
+		title = DefaultTitle
+	}
+
 	b := c.Bounds()
 	w, h := b.Dx(), b.Dy()
 
@@ -75,13 +144,13 @@ func Draw(c *render.Canvas, fonts render.FontFamily, model, note string) {
 	drawReferencePatch(c, w)
 	drawWedges(c, w)
 	drawCrosshair(c, w, h)
-	drawCircle(c, fonts, model, note)
+	drawCircle(c, fonts, title, opts.Lines)
 }
 
-// DrawWithoutCircle paints everything except the central disc and its
+// drawWithoutCircle paints everything except the central disc and its
 // contents. It exists so a test can diff the two and prove nothing drawn for
 // the circle escapes it.
-func DrawWithoutCircle(c *render.Canvas, model, note string) {
+func drawWithoutCircle(c *render.Canvas) {
 	b := c.Bounds()
 	w, h := b.Dx(), b.Dy()
 	c.Dither(b, epaper.Black, epaper.White, 0.5)
@@ -280,8 +349,8 @@ func drawCrosshair(c *render.Canvas, w, h int) {
 // guessed constants. A first attempt used fixed widths and every line of text
 // ran out through the side of the circle — the exact overflow this library
 // exists to make hard, caught by looking at the golden.
-func drawCircle(c *render.Canvas, fonts render.FontFamily, model, note string) {
-	disc := image.Rect(CircleX-CircleR, CircleY-CircleR, CircleX+CircleR+1, CircleY+CircleR+1)
+func drawCircle(c *render.Canvas, fonts render.FontFamily, title string, lines []string) {
+	disc := image.Rect(circleX-circleR, circleY-circleR, circleX+circleR+1, circleY+circleR+1)
 	c.Ellipse(disc, epaper.White)
 	c.StrokeEllipse(disc, epaper.Black)
 
@@ -289,19 +358,23 @@ func drawCircle(c *render.Canvas, fonts render.FontFamily, model, note string) {
 	// adding or resizing an element cannot silently land on top of the next
 	// one. A first attempt used fixed offsets and the legibility ladder drew
 	// straight over the pixel grid.
-	y := CircleY - CircleR + 16
+	y := circleY - circleR + 16
 
 	if fonts != nil {
-		y = fitLine(c, fonts, y, 20, "TEST CARD", epaper.Red)
+		y = fitLine(c, fonts, y, 20, title, epaper.Red)
 
-		// The model name comes from an EEPROM and can be longer than the
+		// Caller lines. A panel model off an EEPROM can be longer than the
 		// circle is wide — "Red/Yellow wHAT (JD79668)" in a monospace bitmap
-		// face needs 175px and the circle is 156 at its widest. Wrap it
-		// rather than shrink it into illegibility, which is the whole point
-		// of using a bitmap face here.
-		y = drawWrapped(c, fonts, y+2, model, epaper.Black)
-		if note != "" {
-			y = drawWrapped(c, fonts, y+1, note, epaper.Black)
+		// face needs 175px and the circle is 156 at its widest — so these
+		// wrap rather than shrink.
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			y = drawWrapped(c, fonts, y+1, line, epaper.Black)
+			if y >= circleBottom() {
+				break // the caller gave us more than the circle holds
+			}
 		}
 
 		// A legibility ladder, smallest last. These are the faces the family
@@ -313,12 +386,15 @@ func drawCircle(c *render.Canvas, fonts render.FontFamily, model, note string) {
 				break
 			}
 			lh := render.LineHeight(f)
-			half := inscribedHalfWidth(maxAbs(y-CircleY, y+lh-CircleY))
+			if y+lh > circleBottom() {
+				break // out of room; the caller gave us a lot of lines
+			}
+			half := inscribedHalfWidth(maxAbs(y-circleY, y+lh-circleY))
 			text := "Hamburgefonstiv"
 			if render.MeasureText(text, f) > 2*half {
 				text = "Hamburgef"
 			}
-			c.Text(image.Pt(CircleX-render.MeasureText(text, f)/2, y), text, f, epaper.Black)
+			c.Text(image.Pt(circleX-render.MeasureText(text, f)/2, y), text, f, epaper.Black)
 			y += lh + 1
 		}
 		y += 3
@@ -326,19 +402,19 @@ func drawCircle(c *render.Canvas, fonts render.FontFamily, model, note string) {
 
 	// A 1px grid: if any of it greys out, the panel is not resolving pixels.
 	gridH := 22
-	if half := inscribedHalfWidth(maxAbs(y-CircleY, y+gridH-CircleY)); half > 12 {
-		c.Checker(image.Rect(CircleX-half, y, CircleX+half, y+gridH), epaper.Black, epaper.White, 1)
-		c.StrokeRect(image.Rect(CircleX-half, y, CircleX+half, y+gridH), epaper.Black)
+	if half := inscribedHalfWidth(maxAbs(y-circleY, y+gridH-circleY)); half > 12 {
+		c.Checker(image.Rect(circleX-half, y, circleX+half, y+gridH), epaper.Black, epaper.White, 1)
+		c.StrokeRect(image.Rect(circleX-half, y, circleX+half, y+gridH), epaper.Black)
 		y += gridH + 2
 	}
 
 	// Flat accent patches, for judging the inks against the dithered mixes
 	// in the ladders either side of the card.
 	patchH := 14
-	if half := inscribedHalfWidth(maxAbs(y-CircleY, y+patchH-CircleY)); half > 12 {
-		c.Checker(image.Rect(CircleX-half, y, CircleX, y+patchH), epaper.Yellow, epaper.Red, 1)
-		c.Rect(image.Rect(CircleX+1, y, CircleX+half, y+patchH), epaper.Red)
-		c.StrokeRect(image.Rect(CircleX-half, y, CircleX+half, y+patchH), epaper.Black)
+	if half := inscribedHalfWidth(maxAbs(y-circleY, y+patchH-circleY)); half > 12 {
+		c.Checker(image.Rect(circleX-half, y, circleX, y+patchH), epaper.Yellow, epaper.Red, 1)
+		c.Rect(image.Rect(circleX+1, y, circleX+half, y+patchH), epaper.Red)
+		c.StrokeRect(image.Rect(circleX-half, y, circleX+half, y+patchH), epaper.Black)
 	}
 }
 
@@ -357,12 +433,23 @@ func drawWrapped(c *render.Canvas, fonts render.FontFamily, y int, s string, ink
 	lh := render.LineHeight(f)
 
 	for _, line := range wrapToCircle(s, f, y, lh) {
+		// Stop at the bottom of the disc rather than drawing through it.
+		// Silently dropping a line is the lesser evil: the alternative is
+		// text spilling onto the dithered field, where it is unreadable and
+		// looks like a rendering fault.
+		if y+lh > circleBottom() {
+			break
+		}
 		w := render.MeasureText(line, f)
-		c.Text(image.Pt(CircleX-w/2, y), line, f, ink)
+		c.Text(image.Pt(circleX-w/2, y), line, f, ink)
 		y += lh
 	}
 	return y
 }
+
+// circleBottom is the lowest y at which text may still be drawn inside the
+// disc, with a margin so a descender cannot cross the outline.
+func circleBottom() int { return circleY + circleR - 6 }
 
 // wrapToCircle breaks s into lines that fit the circle at successive heights.
 func wrapToCircle(s string, f font.Face, y, lineHeight int) []string {
@@ -373,7 +460,7 @@ func wrapToCircle(s string, f font.Face, y, lineHeight int) []string {
 	var lines []string
 	cur := ""
 	for _, word := range words {
-		width := 2 * inscribedHalfWidth(maxAbs(y-CircleY, y+lineHeight-CircleY))
+		width := 2 * inscribedHalfWidth(maxAbs(y-circleY, y+lineHeight-circleY))
 		candidate := word
 		if cur != "" {
 			candidate = cur + " " + word
@@ -393,8 +480,8 @@ func wrapToCircle(s string, f font.Face, y, lineHeight int) []string {
 // The box is as wide as the circle permits across the line's full height, not
 // at its midpoint, so a tall line cannot poke out at its top or bottom corner.
 func fitLine(c *render.Canvas, fonts render.FontFamily, y, height int, s string, ink epaper.Ink) int {
-	half := inscribedHalfWidth(maxAbs(y-CircleY, y+height-CircleY))
-	c.TextFitted(image.Rect(CircleX-half, y, CircleX+half, y+height), s, fonts, ink)
+	half := inscribedHalfWidth(maxAbs(y-circleY, y+height-circleY))
+	c.TextFitted(image.Rect(circleX-half, y, circleX+half, y+height), s, fonts, ink)
 	return y + height
 }
 
@@ -407,7 +494,7 @@ func fitLine(c *render.Canvas, fonts render.FontFamily, y, height int, s string,
 // it has burst out of it.
 func inscribedHalfWidth(dy int) int {
 	const margin = 10
-	d := CircleR*CircleR - dy*dy
+	d := circleR*circleR - dy*dy
 	if d <= 0 {
 		return 0
 	}
@@ -442,7 +529,3 @@ func alternate(i int) epaper.Ink {
 }
 
 func mod(a, b int) int { return ((a % b) + b) % b }
-
-// Fonts returns a FontFamily over the supplied TrueType bytes, caching each
-// size. Callers supply the font; this library embeds none.
-func Fonts(ttf []byte) (render.FontFamily, error) { return newFamily(ttf) }

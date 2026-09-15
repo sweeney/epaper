@@ -8,10 +8,8 @@ import (
 	"time"
 
 	"github.com/sweeney/epaper/inky"
-	"github.com/sweeney/epaper/internal/conformance"
-	"github.com/sweeney/epaper/internal/testcard"
 	"github.com/sweeney/epaper/render"
-	"golang.org/x/image/font/gofont/goregular"
+	"github.com/sweeney/epaper/testcard"
 )
 
 // drawTimeout is generous: a refresh is about 25 s measured, and a stuck panel
@@ -37,7 +35,7 @@ func TestDrawConformance(t *testing.T) {
 	defer dev.Close()
 
 	c := render.NewCanvasFor(dev)
-	conformance.Draw(c)
+	testcard.DrawConformance(c)
 	if err := c.Err(); err != nil {
 		t.Fatalf("drawing: %v", err)
 	}
@@ -61,23 +59,14 @@ func TestDrawTestCard(t *testing.T) {
 	}
 	defer dev.Close()
 
-	fonts, err := testcard.Fonts(goregular.TTF)
-	if err != nil {
-		t.Fatalf("Fonts(): %v", err)
-	}
-
-	c := render.NewCanvasFor(dev)
-	testcard.Draw(c, fonts, dev.Model(), time.Now().Format("2006-01-02 15:04"))
-	if err := c.Err(); err != nil {
-		t.Fatalf("drawing: %v", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), drawTimeout)
 	defer cancel()
 
+	// testcard.Show is the whole thing in one call, which is also what a
+	// consumer would write — so this exercises the documented path.
 	started := time.Now()
-	if err := dev.Show(ctx, c.Image()); err != nil {
-		t.Fatalf("Show(): %v", err)
+	if err := testcard.Show(ctx, dev, time.Now().Format("2006-01-02 15:04")); err != nil {
+		t.Fatalf("testcard.Show(): %v", err)
 	}
 	t.Logf("test card refresh took %s", time.Since(started).Round(time.Millisecond))
 }
