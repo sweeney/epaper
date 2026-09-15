@@ -280,3 +280,33 @@ func inksUsed(c *render.Canvas) []uint8 {
 	}
 	return out
 }
+
+// The default family must serve large sizes too, crisply. A heading that is
+// the one blurry thing on the panel undoes the reason for the bitmap faces.
+func TestFontsCoverLargeSizes(t *testing.T) {
+	fonts := Fonts()
+
+	small, err := fonts(16)
+	if err != nil {
+		t.Fatalf("fonts(16): %v", err)
+	}
+	big, err := fonts(48)
+	if err != nil {
+		t.Fatalf("fonts(48): %v", err)
+	}
+	if render.LineHeight(big) <= render.LineHeight(small) {
+		t.Errorf("48px line height %d is not greater than 16px %d",
+			render.LineHeight(big), render.LineHeight(small))
+	}
+	// Whole multiples only, so glyph edges stay on pixel boundaries.
+	if h := render.LineHeight(big); h%render.LineHeight(small) != 0 {
+		t.Errorf("48px line height %d is not a whole multiple of %d",
+			h, render.LineHeight(small))
+	}
+	// And the same face for the same size, so a family that is asked
+	// repeatedly does not allocate a new wrapper every time.
+	again, _ := fonts(48)
+	if again != big {
+		t.Error("fonts() returned a different face for the same size; it is not caching")
+	}
+}

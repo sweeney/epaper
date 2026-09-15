@@ -21,22 +21,48 @@ const bitmapCeiling = 17
 
 // Fonts returns the card's default faces, which need no font file.
 //
-// Everything it hands back is a hand-drawn bitmap face from
-// golang.org/x/image: [basicfont.Face7x13] below 14px and
-// [inconsolata.Regular8x16] above. Both were designed on a pixel grid, which
-// is why they stay crisp on a panel that has no intermediate tones to soften
-// an edge with.
+// Small sizes are hand-drawn bitmap faces from golang.org/x/image —
+// [basicfont.Face7x13] below 14px, [inconsolata.Regular8x16] above — because
+// those were designed on a pixel grid and stay crisp on a panel with no
+// intermediate tones to soften an edge with.
+//
+// Large sizes are the same bitmap face integer-scaled with [render.ScaleFace],
+// so a heading is exactly as crisp as the body text rather than being the one
+// blurry thing on the panel. The trade is that sizes come in steps: asking for
+// 44px gets you 32px, the largest whole multiple that fits.
 //
 // It embeds nothing of its own — those faces are already linked in, because
 // this library depends on golang.org/x/image for [font.Face] regardless.
 func Fonts() render.FontFamily {
+	var mu sync.Mutex
+	scaled := map[int]font.Face{}
+
 	return func(size int) (font.Face, error) {
-		if size < 14 {
+		switch {
+		case size < 14:
 			return basicfont.Face7x13, nil
+		case size < 2*inconsolataHeight:
+			return inconsolata.Regular8x16, nil
 		}
-		return inconsolata.Regular8x16, nil
+
+		// Whole multiples only: a fractional scale would put glyph edges
+		// between pixels, which is the problem this avoids.
+		n := size / inconsolataHeight
+
+		mu.Lock()
+		defer mu.Unlock()
+		if f, ok := scaled[n]; ok {
+			return f, nil
+		}
+		f := render.ScaleFace(inconsolata.Regular8x16, n)
+		scaled[n] = f
+		return f, nil
 	}
 }
+
+// inconsolataHeight is the pixel height of inconsolata.Regular8x16, and so the
+// step between the scaled sizes [Fonts] can offer.
+const inconsolataHeight = 16
 
 // FontsWith is [Fonts] for the small sizes, scaling the supplied TrueType font
 // above the point where outlines start to work — around 17px.

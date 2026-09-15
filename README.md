@@ -97,6 +97,36 @@ go run ./cmd/epaper-testcard -png card.png    # no hardware needed
 go run ./cmd/epaper-testcard                  # draw on the panel, ~25 s
 ```
 
+One line proves a panel, its wiring and the whole stack:
+
+```go
+dev, err := inky.Open()
+if err != nil {
+	log.Fatal(err)
+}
+defer dev.Close()
+
+if err := testcard.Show(ctx, dev, "bench check"); err != nil {
+	log.Fatal(err)
+}
+```
+
+## Examples
+
+[`examples/`](examples) has four, smallest first:
+
+| | | Needs a panel? |
+|---|---|---|
+| [`hello`](examples/hello) | The smallest useful program | Yes |
+| [`offline`](examples/offline) | Building a layout with no hardware | **No** |
+| [`dashboard`](examples/dashboard) | A realistic status panel | Optional |
+| [`consumertest`](examples/consumertest) | Testing *your own* display code | **No** |
+
+Start with `offline`. The fastest way to build for e-ink is to not use the
+panel: a refresh takes 25 seconds, a PNG takes 25 milliseconds and you can
+diff it. Then swap `mock.New` for `inky.Open` — that one line is the only
+difference.
+
 ## Testing without a Pi
 
 Most of this library is pure and runs on a laptop:

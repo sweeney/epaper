@@ -3,6 +3,7 @@ package render_test
 import (
 	"errors"
 	"image"
+	"strings"
 	"sync"
 	"testing"
 
@@ -347,4 +348,110 @@ func TestSmallTextCarriesEnoughInk(t *testing.T) {
 				tc.size, got, tc.minInk)
 		}
 	}
+}
+
+func TestWrapText(t *testing.T) {
+	f := face(t, 12)
+
+	t.Run("splits on spaces", func(t *testing.T) {
+		lines := render.WrapText("the quick brown fox jumps over the lazy dog", f, 100)
+		if len(lines) < 2 {
+			t.Fatalf("WrapText() = %q, want more than one line", lines)
+		}
+		for _, line := range lines {
+			if w := render.MeasureText(line, f); w > 100 {
+				t.Errorf("line %q is %dpx, wider than the 100px limit", line, w)
+			}
+		}
+		if got := strings.Join(lines, " "); got != "the quick brown fox jumps over the lazy dog" {
+			t.Errorf("wrapping changed the text: %q", got)
+		}
+	})
+
+	t.Run("a word wider than the line stays whole", func(t *testing.T) {
+		lines := render.WrapText("supercalifragilisticexpialidocious", f, 20)
+		if len(lines) != 1 || lines[0] != "supercalifragilisticexpialidocious" {
+			t.Errorf("WrapText() = %q, want the word left intact", lines)
+		}
+	})
+
+	t.Run("degenerate input", func(t *testing.T) {
+		for _, s := range []string{"", "   ", "\t\n"} {
+			if got := render.WrapText(s, f, 100); got != nil {
+				t.Errorf("WrapText(%q) = %q, want nil", s, got)
+			}
+		}
+		if got := render.WrapText("hello", nil, 100); got != nil {
+			t.Errorf("WrapText() with a nil face = %q, want nil", got)
+		}
+	})
+
+	t.Run("fits on one line", func(t *testing.T) {
+		if got := render.WrapText("hi", f, 400); len(got) != 1 {
+			t.Errorf("WrapText() = %q, want one line", got)
+		}
+	})
+}
+
+func TestTextWrapped(t *testing.T) {
+	const prose = "the quick brown fox jumps over the lazy dog"
+
+	t.Run("draws every line when they fit", func(t *testing.T) {
+		c := render.NewCanvas(image.Rect(0, 0, 200, 200), fourInk)
+		c.Fill(epaper.White)
+		n := c.TextWrapped(image.Rect(4, 4, 150, 190), prose, face(t, 12), epaper.Black)
+		if err := c.Err(); err != nil {
+			t.Fatalf("Err() = %v", err)
+		}
+		if n < 2 {
+			t.Errorf("TextWrapped() = %d, want more than one line", n)
+		}
+		if countInk(c, black) == 0 {
+			t.Error("TextWrapped() drew nothing")
+		}
+	})
+
+	// Overflow must be reported, not silent — the whole reason this library
+	// bothers with TextFitted in the first place.
+	t.Run("reports lines that did not fit", func(t *testing.T) {
+		c := render.NewCanvas(image.Rect(0, 0, 200, 200), fourInk)
+		c.Fill(epaper.White)
+		n := c.TextWrapped(image.Rect(4, 4, 80, 24), prose, face(t, 12), epaper.Black)
+
+		if !errors.Is(c.Err(), render.ErrTextDoesNotFit) {
+			t.Errorf("Err() = %v, want ErrTextDoesNotFit", c.Err())
+		}
+		if n == 0 {
+			t.Error("TextWrapped() drew no lines at all; it should draw what fits")
+		}
+		// And what it did draw must stay inside the box.
+		for y := range 200 {
+			for x := range 200 {
+				if c.Image().ColorIndexAt(x, y) != black {
+					continue
+				}
+				if y >= 24 {
+					t.Fatalf("ink at (%d,%d), below the %dpx box", x, y, 24)
+				}
+			}
+		}
+	})
+
+	t.Run("errors", func(t *testing.T) {
+		c := render.NewCanvas(image.Rect(0, 0, 200, 200), fourInk)
+		if got := c.TextWrapped(image.Rect(0, 0, 100, 100), "hi", nil, epaper.Black); got != 0 {
+			t.Errorf("TextWrapped() with a nil face = %d, want 0", got)
+		}
+		if c.Err() == nil {
+			t.Error("Err() = nil after a nil face")
+		}
+
+		c2 := render.NewCanvas(image.Rect(0, 0, 200, 200), fourInk)
+		if got := c2.TextWrapped(image.Rect(0, 0, 100, 100), "hi", face(t, 12), epaper.Green); got != 0 {
+			t.Errorf("TextWrapped() with an absent ink = %d, want 0", got)
+		}
+		if !errors.Is(c2.Err(), render.ErrInkUnavailable) {
+			t.Errorf("Err() = %v, want ErrInkUnavailable", c2.Err())
+		}
+	})
 }

@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"image"
+	"strings"
 
 	"github.com/sweeney/epaper"
 	"golang.org/x/image/font"
@@ -198,4 +199,78 @@ func LineHeight(f font.Face) int {
 // ceilFixed converts a 26.6 fixed-point value to whole pixels, rounding up.
 func ceilFixed(v fixed.Int26_6) int {
 	return int((v + 0x3F) >> 6)
+}
+
+// WrapText breaks a string into lines that each fit within width pixels.
+//
+// Breaks happen at spaces. A single word wider than the line is left whole on
+// a line of its own rather than being cut: a truncated word is usually worse
+// than a wide one, and [Canvas.TextWrapped] will report the overflow anyway.
+//
+// Runs of whitespace collapse, and a string of only whitespace returns nil.
+func WrapText(s string, f font.Face, width int) []string {
+	if f == nil {
+		return nil
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+
+	var lines []string
+	cur := words[0]
+	for _, word := range words[1:] {
+		candidate := cur + " " + word
+		if MeasureText(candidate, f) <= width {
+			cur = candidate
+			continue
+		}
+		lines = append(lines, cur)
+		cur = word
+	}
+	return append(lines, cur)
+}
+
+// TextWrapped draws a string into a rectangle, breaking it across lines, and
+// returns the number of lines it drew.
+//
+// Lines that would fall outside the rectangle are not drawn, and that records
+// [ErrTextDoesNotFit] on the canvas. This is the same bargain the rest of the
+// package makes: the text is clipped rather than spilling over your layout,
+// but you are told, because on e-ink nobody is watching at the moment it
+// happens.
+//
+// Use [Canvas.TextFitted] instead when the text must all appear and the size
+// may give; use this when the size is fixed and the text may run on.
+func (c *Canvas) TextWrapped(r image.Rectangle, s string, f font.Face, i epaper.Ink) int {
+	if _, ok := c.ink(i); !ok {
+		return 0
+	}
+	if f == nil {
+		c.fail(fmt.Errorf("render: text wrapped: font face is nil"))
+		return 0
+	}
+
+	lines := WrapText(s, f, r.Dx())
+	lh := LineHeight(f)
+	if lh <= 0 {
+		return 0
+	}
+
+	drawn := 0
+	y := r.Min.Y
+	for _, line := range lines {
+		if y+lh > r.Max.Y {
+			break
+		}
+		c.Text(image.Pt(r.Min.X, y), line, f, i)
+		y += lh
+		drawn++
+	}
+
+	if drawn < len(lines) {
+		c.fail(fmt.Errorf("render: text wrapped: %d of %d lines did not fit in %v: %w",
+			len(lines)-drawn, len(lines), r, ErrTextDoesNotFit))
+	}
+	return drawn
 }
