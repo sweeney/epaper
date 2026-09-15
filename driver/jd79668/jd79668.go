@@ -114,7 +114,7 @@ const (
 	//
 	// Checking the line's state directly cannot distinguish that from a
 	// genuinely quick reply, but the elapsed time can: a measured full
-	// refresh on this panel is 25.4 s, and no real one completes in under a
+	// refresh on this panel is 20.5 s, and no real one completes in under a
 	// second. So the driver times the refresh wait instead of interrogating
 	// the line, which is unambiguous and has no race.
 	DefaultMinRefreshTime = time.Second
@@ -317,7 +317,7 @@ func (d *Device) checkRefreshWasReal(elapsed time.Duration) error {
 		return nil
 	}
 	return fmt.Errorf("jd79668: the panel reported the refresh complete after only %s, "+
-		"but a full refresh takes about 25s. The BUSY line reads ready when it is "+
+		"but a full refresh takes about 20s. The BUSY line reads ready when it is "+
 		"disconnected, so check its wiring — nothing was drawn: %w", elapsed, ErrBusyNotConnected)
 }
 

@@ -212,6 +212,62 @@ library would have sent. Every shape in it follows a rule written down in
 `testdata/README.md` rather than inherited from another library's rasteriser,
 which is what makes that comparison possible at all.
 
+## Troubleshooting
+
+Every one of these is something that actually happened on the bench, and the
+error message the library gives you is listed so it can be searched for.
+
+**`GPIO 8 (chip select) is already claimed`**
+The kernel SPI driver owns the pin. Add `dtoverlay=spi0-0cs` to
+`/boot/firmware/config.txt` and reboot. With the overlay set, `/dev/spidev0.1`
+disappears and chip-select becomes ours to drive. This presents as a busy line
+rather than as a missing device, which is why the error spells out the fix.
+
+**`claiming GPIO lines (is the user in the gpio group?)`**, or the same for
+`spi` / `i2c`
+Add yourself: `sudo usermod -aG spi,i2c,gpio $USER`, then log out and back in.
+Root is never required.
+
+**`reading the identification EEPROM ... (is a HAT attached?)`**
+Usually nothing is plugged in, or I2C is off (`dtparam=i2c_arm=on`). Note that
+**`i2cdump -b` lies about this part**: it uses byte-mode SMBus reads, and this
+EEPROM needs a two-byte register address written first. The convincing garbage
+it returns cost us a day chasing a seating fault on good hardware. Use
+`inky.Identify` instead, which does the combined transaction.
+
+**`the panel reported the refresh complete after only 12ms, but a full refresh
+takes about 20s ... nothing was drawn`**
+The BUSY line is not connected. It has a host pull-up, so a disconnected BUSY
+reads *ready* and every wait returns instantly — an idle panel and a
+disconnected one are indistinguishable by reading the line, which is why the
+driver times the refresh instead. Check the wiring on GPIO 17.
+
+**`panel still busy after 40s`**
+The refresh genuinely stalled. Power-cycle the panel. If it recurs, try
+`inky.Options{CommandDelay: jd79668.VendorCommandDelay}` — that restores the
+reference implementation's timing, which this library drops for the reasons in
+`PLAN.md` §9.3, and please open an issue saying what happened.
+
+**`ink green is not on this panel`**
+The panel has four inks and green is not one of them. Nothing is substituted,
+deliberately: a panel that looks plausible and is wrong is the worst outcome on
+a display nobody is watching. Use `dev.Palette().NearestTo(epaper.Green)` if a
+rough match is genuinely what you want.
+
+**`text does not fit`**
+Exactly what it says, and worth trusting. On e-ink there is no scrollbar and no
+overflow indicator, so text that does not fit simply is not there. Use
+`TextFitted` to shrink, `TextWrapped` to run on, or make the box bigger.
+
+**Text looks badly spaced or broken up**
+Use a bitmap font — see [above](#text-use-a-bitmap-font). This one took two
+wrong "fixed" claims to diagnose.
+
+**`image palette is not the panel's`**
+Build images with `dev.NewImage()` or `render.NewCanvasFor(dev)`. The palette's
+order *is* the wire format, so a same-length palette with two inks swapped
+means every index denotes a different colour.
+
 ## Licence
 
 MIT — see [`LICENSE`](LICENSE).
