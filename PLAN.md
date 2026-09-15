@@ -983,21 +983,38 @@ hardware and produce reference images directly.
 `testcard_f.py` is also copied into this repo as
 `tools/testcard_f_reference.py`, so the visual target travels with the code.
 
-### 11.3 The Python reference is a live asset — do not delete it
+### 11.3 The Python reference — removed, and how to bring it back
 
-A working Pimoroni install lives at `~/inky-trial/venv` on the Pi
-(`inky==2.5.0`, `pillow==12.3.0`, `numpy==2.5.3`).
+A working Pimoroni install lived at `~/inky-trial/venv` on the Pi
+(`inky==2.5.0`, `pillow==12.3.0`, `numpy==2.5.3`). It was the known-good
+oracle for M8.
 
-**It is our known-good oracle for M8** and must survive until that milestone
-passes. `~/pi-inky-setup/teardown.sh` removes it; do not run that until the Go
-driver is byte-identical and proven on the panel.
+**Removed on 2026-09-15**, once M8 had passed and the Go driver was proven on
+the panel — which was the condition this section set. `teardown.sh` took the
+109 MB venv and nothing else: SPI and I2C stay enabled, the apt packages stay,
+and `~/pi-inky-setup` stays. The full hardware suite was re-run afterwards and
+passes, which is the useful part: **the library never depended on it.**
 
-The vendor source, which is the authority for every constant in §2.5, is at:
+Nothing was lost that is not already committed here:
 
+- The vendor source the constants derive from is at `reference/vendor-inky/`.
+- The fixtures it generated are at `testdata/`, and `testdata/README.md` §5
+  covers what to do if one ever disagrees with the hardware.
+- The Pi's copy of `testcard.py` was byte-identical to the one in
+  `scratch/inky-setup`.
+
+To bring it back — only needed to *regenerate* fixtures, never to use the
+library:
+
+```bash
+ssh sweeney@192.168.1.6
+python3 -m venv ~/inky-trial/venv
+~/inky-trial/venv/bin/pip install 'inky==2.5.0' 'pillow==12.3.0' 'numpy==2.5.3'
 ```
-~/inky-trial/venv/lib/python3.13/site-packages/inky/inky_jd79668.py
-~/inky-trial/venv/lib/python3.13/site-packages/inky/eeprom.py
-```
+
+Pin those versions. A different Pillow would not change the packing, but it
+could change how the fixture's PNG is written, and the point of a fixture is
+that it does not move under you.
 
 ### 11.4 Real EEPROM bytes, captured 2026-09-14
 

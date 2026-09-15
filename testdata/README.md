@@ -214,7 +214,12 @@ nothing at all.
 ## 4. Regenerating
 
 `tools/conformance.py` rebuilds the conformance set. It must run on the Pi, in
-the reference venv, because it uses the real vendor library as the oracle:
+the reference venv, because it uses the real vendor library as the oracle for
+the packing.
+
+**That venv no longer exists** — it was removed once M8 passed; see `PLAN.md`
+§11.3, which has the one command that recreates it. You only need it to
+regenerate these files, never to use the library.
 
 ```bash
 scp tools/conformance.py sweeney@192.168.1.6:~/
