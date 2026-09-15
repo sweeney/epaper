@@ -832,6 +832,19 @@ depends on it.
    it, no consumer has asked, and it complicates the API. Out of scope for v1;
    revisit if a real use case appears.
 
+9. **Rotation.** The wHAT is landscape; plenty of projects mount a panel
+   portrait. Nothing here helps: a consumer wanting portrait has to draw into
+   their own 300×400 image and transpose it into the 400×300 one the device
+   wants, which is a chore and easy to get subtly wrong.
+
+   Deliberately **not** built. There is no consumer asking for it, and §3.2's
+   rule applies — with one real use case in hand there is something to design
+   against, and without one there is only guesswork about whether it belongs on
+   `Device` (so the driver could use the controller's own scan direction), on
+   `Canvas`, or as a pure `render.Rotate90` helper.
+
+   Noted here so that the gap is a decision rather than an oversight.
+
 6. ~~**`Device.Show` concurrency.**~~ **Resolved at M1.** Drivers serialise
    `Show` internally with a mutex; the `Device` doc comment says so. It is two
    lines and removes a whole class of consumer bug — a service with a ticker
