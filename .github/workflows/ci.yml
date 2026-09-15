@@ -41,7 +41,8 @@ jobs:
             -o test-report.html \
             -title "epaper" \
             -branch "${GITHUB_REF_NAME}" \
-            -commit "${GITHUB_SHA::7}" \
+            -commit "${GITHUB_SHA}" \
+            -repo "${GITHUB_REPOSITORY}" \
             -summary "${GITHUB_STEP_SUMMARY}" \
             -artifact "test-report"
         continue-on-error: true

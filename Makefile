@@ -58,7 +58,7 @@ report:
 		-json test.json -cover coverage.out -goldens testdata/golden \
 		-o test-report.html -title epaper \
 		-branch "$$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" \
-		-commit "$$(git rev-parse --short HEAD 2>/dev/null)"
+		-commit "$$(git rev-parse HEAD 2>/dev/null)"
 	@echo "open test-report.html"
 
 ## lint: vet + golangci-lint, for BOTH host and Linux build constraints

@@ -30,10 +30,11 @@ func main() {
 		goldens  = flag.String("goldens", "", "directory of PNGs to embed")
 		outPath  = flag.String("o", "report.html", "file to write")
 		title    = flag.String("title", "epaper", "page title")
-		commit   = flag.String("commit", "", "commit SHA to show")
+		commit   = flag.String("commit", "", "full commit SHA: shown abbreviated, and used to link the golden images")
 		branch   = flag.String("branch", "", "branch name to show")
 		summary  = flag.String("summary", "", "also write a Markdown summary here (e.g. $GITHUB_STEP_SUMMARY)")
 		artifact = flag.String("artifact", "", "artifact name to mention in the summary")
+		repo     = flag.String("repo", "", "owner/name, so the summary can link the golden images")
 	)
 	flag.Parse()
 
@@ -100,7 +101,8 @@ func main() {
 		if err != nil {
 			log.Printf("summary: %v (continuing)", err)
 		} else {
-			if err := writeSummary(f, run, *artifact); err != nil {
+			opts := SummaryOptions{Repo: *repo, SHA: *commit, Artifact: *artifact}
+			if err := writeSummary(f, run, opts); err != nil {
 				log.Printf("summary: %v (continuing)", err)
 			}
 			if err := f.Close(); err != nil {

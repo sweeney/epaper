@@ -83,10 +83,30 @@ type Run struct {
 // OK reports whether the whole run passed.
 func (r *Run) OK() bool { return r.Failed == 0 }
 
-// HasCoverage reports whether a coverage profile was supplied.
-func (r *Run) HasCoverage() bool { return r.Cover != nil && r.Cover.Total > 0 }
+// HasCoverage reports whether anything measured coverage, whether from a
+// profile or from go test's own summary line.
+func (r *Run) HasCoverage() bool {
+	if r.HasTotal() {
+		return true
+	}
+	for _, p := range r.Packages {
+		if p.HasCover {
+			return true
+		}
+	}
+	return false
+}
 
-// Coverage is the statement-weighted percentage across the whole run.
+// HasTotal reports whether a coverage PROFILE was supplied, which is the only
+// thing that makes an overall figure computable.
+//
+// go test prints a percentage per package but not the statement counts behind
+// it, so without the profile there is no honest way to combine them — see
+// [Coverage.Overall] for why averaging the percentages is not it.
+func (r *Run) HasTotal() bool { return r.Cover != nil && r.Cover.Total > 0 }
+
+// Coverage is the statement-weighted percentage across the whole run, or 0 if
+// no profile was supplied. Check [Run.HasTotal] first.
 func (r *Run) Coverage() float64 { return r.Cover.Overall() }
 
 // parse reads `go test -json` events.

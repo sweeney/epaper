@@ -208,14 +208,14 @@ func TestLoadImagesRejectsHugeFiles(t *testing.T) {
 
 func TestWriteSummary(t *testing.T) {
 	var buf bytes.Buffer
-	if err := writeSummary(&buf, sampleRun(t), "test-report"); err != nil {
+	opts := SummaryOptions{Artifact: "test-report"}
+	if err := writeSummary(&buf, sampleRun(t), opts); err != nil {
 		t.Fatalf("writeSummary(): %v", err)
 	}
 	out := buf.String()
 
 	for _, want := range []string{
-		"FAIL", "### Failures", "TestTwo", "boom",
-		"Coverage by package", "test-report",
+		"FAIL", "### Failures", "TestTwo", "boom", "### Coverage", "test-report",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the summary does not mention %q", want)
@@ -225,12 +225,20 @@ func TestWriteSummary(t *testing.T) {
 	if strings.Contains(out, "github.com/sweeney/epaper/") {
 		t.Error("package names were not shortened")
 	}
+	// Failures come first: it is why anyone opened the page.
+	if strings.Index(out, "### Failures") > strings.Index(out, "### Coverage") {
+		t.Error("the failures section is below the coverage section")
+	}
+	// A non-zero failure count must be hard to skim past.
+	if !strings.Contains(out, "| **1** |") {
+		t.Error("the failure count is not emphasised")
+	}
 }
 
 func TestWriteSummaryPassing(t *testing.T) {
 	var buf bytes.Buffer
 	run := &Run{Title: "t", Passed: 5, Generated: time.Now()}
-	if err := writeSummary(&buf, run, ""); err != nil {
+	if err := writeSummary(&buf, run, SummaryOptions{}); err != nil {
 		t.Fatalf("writeSummary(): %v", err)
 	}
 	out := buf.String()
@@ -239,6 +247,100 @@ func TestWriteSummaryPassing(t *testing.T) {
 	}
 	if strings.Contains(out, "### Failures") {
 		t.Error("a passing run should have no Failures section")
+	}
+}
+
+// GitHub's Markdown strips data: URIs, so the renders have to be LINKED at
+// the run's own SHA — which is also what makes the summary show the goldens
+// this run used rather than whatever is on main now.
+func TestWriteSummaryLinksRenders(t *testing.T) {
+	run := sampleRun(t)
+	run.Images = []Image{
+		{Name: "testcard", Width: 400, Height: 300},
+		{Name: "primitives", Width: 200, Height: 120, Changed: true},
+	}
+
+	var buf bytes.Buffer
+	opts := SummaryOptions{Repo: "sweeney/epaper", SHA: "abc123def456", Artifact: "test-report"}
+	if err := writeSummary(&buf, run, opts); err != nil {
+		t.Fatalf("writeSummary(): %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"https://raw.githubusercontent.com/sweeney/epaper/abc123def456/testdata/golden/testcard.png",
+		"https://raw.githubusercontent.com/sweeney/epaper/abc123def456/testdata/golden/primitives.png",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the summary does not link %q", want)
+		}
+	}
+	// A changed render must be called out, not left looking like the rest.
+	if !strings.Contains(out, "render(s) changed") || !strings.Contains(out, "`primitives`") {
+		t.Error("the changed render is not flagged")
+	}
+	// data: URIs do not survive GitHub's sanitiser, so they must not be used.
+	if strings.Contains(out, "data:image") {
+		t.Error("the summary inlines a data: URI, which GitHub will strip")
+	}
+}
+
+// Without a repo and SHA there is nothing to link to, so the section is
+// omitted rather than emitting broken images.
+func TestWriteSummarySkipsRendersWithoutARepo(t *testing.T) {
+	run := sampleRun(t)
+	run.Images = []Image{{Name: "testcard", Width: 400, Height: 300}}
+
+	var buf bytes.Buffer
+	if err := writeSummary(&buf, run, SummaryOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "### Renders") {
+		t.Error("a Renders section was written with no URL to point at")
+	}
+}
+
+func TestCoverageBar(t *testing.T) {
+	for _, tc := range []struct {
+		pct  float64
+		want string
+	}{
+		{0, "░░░░░░░░░░"},
+		{100, "██████████"},
+		{50, "█████░░░░░"},
+		{-5, "░░░░░░░░░░"},  // clamped
+		{150, "██████████"}, // clamped
+	} {
+		if got := bar(tc.pct, 10); got != tc.want {
+			t.Errorf("bar(%v) = %q, want %q", tc.pct, got, tc.want)
+		}
+	}
+}
+
+// The slowest-tests table is where the suite's time actually goes.
+func TestWriteSummarySlowest(t *testing.T) {
+	run := &Run{
+		Title: "t", Passed: 2, Generated: time.Now(),
+		Packages: []*Package{{
+			Name:   "github.com/sweeney/epaper/render",
+			Status: "pass",
+			Tests: []*Test{
+				{Name: "TestQuick", Status: "pass", Elapsed: time.Millisecond},
+				{Name: "TestSlow", Status: "pass", Elapsed: 3 * time.Second},
+			},
+		}},
+	}
+
+	var buf bytes.Buffer
+	if err := writeSummary(&buf, run, SummaryOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Slowest tests") {
+		t.Fatal("no slowest-tests section")
+	}
+	if strings.Index(out, "TestSlow") > strings.Index(out, "TestQuick") {
+		t.Error("the slowest test is not listed first")
 	}
 }
 

@@ -52,6 +52,14 @@ var funcs = template.FuncMap{
 		return "poor"
 	},
 	"trim": strings.TrimSpace,
+	// A full SHA is unreadable in a header; seven characters is what git
+	// itself shows.
+	"abbrev": func(s string) string {
+		if len(s) > 7 {
+			return s[:7]
+		}
+		return s
+	},
 }
 
 var page = template.Must(template.New("report").Funcs(funcs).Parse(`<!doctype html>
@@ -164,7 +172,7 @@ var page = template.Must(template.New("report").Funcs(funcs).Parse(`<!doctype ht
   <h1>{{.Title}} <span class="badge {{if .OK}}pass{{else}}fail{{end}}">{{if .OK}}PASS{{else}}FAIL{{end}}</span></h1>
   <div class="sub">
     {{with .Branch}}<code>{{.}}</code> · {{end}}
-    {{with .Commit}}<code>{{.}}</code> · {{end}}
+    {{with .Commit}}<code>{{abbrev .}}</code> · {{end}}
     {{.Generated.Format "2 Jan 2006, 15:04:05 MST"}}
   </div>
 </header>
@@ -173,7 +181,7 @@ var page = template.Must(template.New("report").Funcs(funcs).Parse(`<!doctype ht
   <div class="card"><div class="n pass">{{.Passed}}</div><div class="l">Passed</div></div>
   <div class="card"><div class="n {{if .Failed}}fail{{end}}">{{.Failed}}</div><div class="l">Failed</div></div>
   <div class="card"><div class="n skip">{{.Skipped}}</div><div class="l">Skipped</div></div>
-  {{if .HasCoverage}}
+  {{if .HasTotal}}
   <div class="card"><div class="n">{{pct .Coverage}}</div><div class="l">Coverage</div></div>
   {{end}}
   <div class="card"><div class="n">{{dur .Elapsed}}</div><div class="l">Duration</div></div>
