@@ -51,7 +51,7 @@ jobs:
       # always(): a failing run is the one you most want to look at.
       - name: upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report
           path: |
@@ -65,7 +65,7 @@ jobs:
       # at instead of guess about.
       - name: upload changed renders
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: changed-renders
           path: testdata/golden/*.got.png
@@ -120,7 +120,7 @@ jobs:
         run: go test . -run FuzzPack -fuzz FuzzPack -fuzztime 45s
       - name: upload crashers
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-crashers
           path: testdata/fuzz/
