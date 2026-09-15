@@ -12,7 +12,7 @@ import (
 	"github.com/sweeney/epaper/testcard"
 )
 
-// drawTimeout is generous: a refresh is about 25 s measured, and a stuck panel
+// drawTimeout is generous: a refresh is about 20 s measured, and a stuck panel
 // should fail the test rather than hang the run.
 const drawTimeout = 2 * time.Minute
 
@@ -21,7 +21,7 @@ const drawTimeout = 2 * time.Minute
 // These exact pixels are already proven byte-identical to the vendor's output
 // by the render tests, so anything wrong on the panel is in the transport, the
 // command sequence or the wiring — not in the drawing. That is what makes this
-// worth 25 seconds.
+// worth 20 seconds.
 //
 // The four single-pixel corner markers are the thing to look at: red at
 // (396,296), white at (399,296), yellow at (396,299), black at (399,299). A

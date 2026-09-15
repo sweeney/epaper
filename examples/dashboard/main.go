@@ -1,7 +1,7 @@
 // Command dashboard draws a realistic status panel.
 //
 //	go run ./examples/dashboard -png out.png    # no hardware needed
-//	go run ./examples/dashboard                 # on the Pi, ~25 s
+//	go run ./examples/dashboard                 # on the Pi, ~20 s
 //
 // This is the shape most e-ink projects end up in: some numbers, a couple of
 // bars, a timestamp, refreshed every few minutes. It shows the things that

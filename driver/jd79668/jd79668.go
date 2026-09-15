@@ -101,7 +101,7 @@ type Conn interface {
 
 // Defaults for [Config]. Each is the vendor's value unless noted.
 const (
-	// DefaultBusyTimeout bounds a single wait. A full refresh is about 25 s
+	// DefaultBusyTimeout bounds a single wait. A full refresh is about 20 s
 	// measured; 40 s is the vendor's timeout and leaves comfortable margin.
 	DefaultBusyTimeout = 40 * time.Second
 
@@ -181,7 +181,7 @@ type Device struct {
 
 	// mu serialises Show. A service with a ticker and a webhook both
 	// drawing would otherwise interleave two framebuffers into one picture,
-	// 25 seconds later, intermittently — PLAN §9.6.
+	// 20 seconds later, intermittently — PLAN §9.6.
 	mu     sync.Mutex
 	closed bool
 }
@@ -229,7 +229,7 @@ func (d *Device) NewImage() *image.Paletted {
 }
 
 // Show draws an image and returns once the refresh is complete, which takes
-// around 25 seconds.
+// around 20 seconds.
 //
 // Cancelling ctx abandons the wait, not the refresh. The controller has no
 // abort: it finishes redrawing regardless, and the next Show will block until

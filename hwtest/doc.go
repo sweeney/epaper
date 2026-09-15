@@ -11,6 +11,6 @@
 // needed on the Pi.
 //
 // These tests drive real hardware. They read the EEPROM, claim GPIO lines and
-// open the SPI device; the ones that refresh the panel take about 25 seconds
+// open the SPI device; the ones that refresh the panel take about 20 seconds
 // each and are marked as such.
 package hwtest

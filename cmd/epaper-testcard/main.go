@@ -9,7 +9,7 @@
 //	epaper-testcard -png card.png       # render to a file, no hardware needed
 //
 // The -png mode needs no Pi and no panel, which is the point: a layout can be
-// checked in milliseconds rather than the 25 seconds a refresh costs.
+// checked in milliseconds rather than the 20 seconds a refresh costs.
 //
 // Note that this command embeds a font. The library deliberately does not —
 // a font would dwarf it, and the choice belongs to the consumer — but a
@@ -81,7 +81,7 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	fmt.Printf("drawing %s — a full refresh takes about 25 seconds...\n", *pattern)
+	fmt.Printf("drawing %s — a full refresh takes about 20 seconds...\n", *pattern)
 	started := time.Now()
 	if err := dev.Show(ctx, img); err != nil {
 		return err

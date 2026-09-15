@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  # There are three dependencies and each needed an argument to be added, so
+  # an update to any of them is worth a human look rather than an auto-merge.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"

@@ -2,7 +2,7 @@
 //
 // Everything here is pure: no hardware, no I/O, and no dependency on a driver.
 // A layout can therefore be developed and tested entirely on a laptop, which
-// matters more than it sounds — a refresh takes about 25 seconds, so finding a
+// matters more than it sounds — a refresh takes about 20 seconds, so finding a
 // clipped header on the panel costs a thousand times what finding it in a
 // golden test does.
 //

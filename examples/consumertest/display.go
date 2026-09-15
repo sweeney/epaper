@@ -2,7 +2,7 @@
 //
 // The trick is not a trick: keep the drawing a pure function from data to a
 // canvas, and it becomes testable like any other function. No Pi, no panel, no
-// 25-second wait, and it runs in CI.
+// 20-second wait, and it runs in CI.
 //
 //	func Draw(c *render.Canvas, s State) error
 //

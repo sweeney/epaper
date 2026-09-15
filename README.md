@@ -1,12 +1,16 @@
 # epaper
 
+[![ci](https://github.com/sweeney/epaper/actions/workflows/ci.yml/badge.svg)](https://github.com/sweeney/epaper/actions/workflows/ci.yml)
+[![go reference](https://pkg.go.dev/badge/github.com/sweeney/epaper.svg)](https://pkg.go.dev/github.com/sweeney/epaper)
+[![go report card](https://goreportcard.com/badge/github.com/sweeney/epaper)](https://goreportcard.com/report/github.com/sweeney/epaper)
+
 A Go library for driving e-ink panels from a Raspberry Pi.
 
 Make the panel disappear, so that a program that wants to put something on an
 e-ink screen thinks only about the picture.
 
 > **Status: v0.** Working end to end on a Pi 4B with an Inky wHAT 4.2" — the
-> test card draws on the panel in 25.6 s. The API may still change before
+> test card draws on the panel in 20.5 s. The API may still change before
 > v1.0. See [`PLAN.md`](PLAN.md) for the design and the milestone list, and
 > [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to add a controller.
 
@@ -24,6 +28,7 @@ import (
 	"github.com/sweeney/epaper"
 	"github.com/sweeney/epaper/inky"
 	"github.com/sweeney/epaper/render"
+	"github.com/sweeney/epaper/testcard"
 )
 
 func main() {
@@ -33,10 +38,17 @@ func main() {
 	}
 	defer dev.Close()
 
-	c := render.NewCanvasFor(dev) // bounds and palette both come from the device
+	// Bounds and palette both come from the device, so the image cannot
+	// disagree with the panel it is going to.
+	c := render.NewCanvasFor(dev)
 	c.Fill(epaper.White)
-	c.Rect(image.Rect(0, 0, 400, 30), epaper.Red)
-	c.Text(image.Pt(8, 6), "HELLO", loadFont(), epaper.White)
+
+	header := image.Rect(0, 0, 400, 48)
+	c.Rect(header, epaper.Red)
+	c.TextFitted(header.Inset(6), "HELLO", testcard.Fonts(), epaper.White)
+
+	// One check for all the drawing above: the first failure is recorded and
+	// later calls become no-ops, so nothing is hidden.
 	if err := c.Err(); err != nil {
 		log.Fatal(err) // e.g. this panel has no red
 	}
@@ -63,7 +75,7 @@ These come from things that actually bit us on the bench, not from taste.
 | Every failure is a returned `error` | Sentinel errors, so callers can `errors.Is` and act |
 | No cgo | `GOOS=linux GOARCH=arm64 go build` gives a static binary, cross-compiled from a Mac |
 | No root required | A user in `spi`, `i2c` and `gpio` can drive the panel |
-| `context.Context` on anything that blocks | A refresh takes ~25 s |
+| `context.Context` on anything that blocks | A refresh takes ~20 s |
 | Measure, don't inherit | Copied constants are cited; copied *delays* are tested for load-bearingness first — one turned out to be a debugging leftover costing 19% of every refresh |
 
 ## Supported hardware
@@ -90,11 +102,27 @@ presents as a chip-select conflict, not as a missing device.
 
 The user must be in the `spi`, `i2c` and `gpio` groups. Root is not needed.
 
+## Text: use a bitmap font
+
+The one genuinely surprising thing about this hardware, learned the hard way
+and worth knowing before you draw any text:
+
+**Below about 16px, a scaled outline font cannot render legibly on a panel with
+no intermediate tones, and no amount of tuning fixes it.** A stem is about one
+pixel wide and lands at an arbitrary sub-pixel position, so after thresholding
+some stems come out one pixel and their neighbours two. It reads as bad
+letter-spacing rather than as missing ink, which is why it is easy to
+misdiagnose.
+
+`testcard.Fonts()` returns bitmap faces and needs no font file. See
+[`render.FontFamily`](https://pkg.go.dev/github.com/sweeney/epaper/render#FontFamily)
+for the details, including why `font.HintingFull` does not help.
+
 ## Try it
 
 ```bash
 go run ./cmd/epaper-testcard -png card.png    # no hardware needed
-go run ./cmd/epaper-testcard                  # draw on the panel, ~25 s
+go run ./cmd/epaper-testcard                  # draw on the panel, ~20 s
 ```
 
 One line proves a panel, its wiring and the whole stack:
@@ -123,7 +151,7 @@ if err := testcard.Show(ctx, dev, "bench check"); err != nil {
 | [`consumertest`](examples/consumertest) | Testing *your own* display code | **No** |
 
 Start with `offline`. The fastest way to build for e-ink is to not use the
-panel: a refresh takes 25 seconds, a PNG takes 25 milliseconds and you can
+panel: a refresh takes 20 seconds, a PNG takes 20 milliseconds and you can
 diff it. Then swap `mock.New` for `inky.Open` — that one line is the only
 difference.
 

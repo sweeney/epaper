@@ -61,7 +61,7 @@ type Device interface {
 	NewImage() *image.Paletted
 
 	// Show draws an image and returns once the refresh is complete, which on
-	// a typical four-colour panel takes around 25 seconds.
+	// a typical four-colour panel takes around 20 seconds.
 	//
 	// Cancelling ctx abandons the wait, not the refresh: the panel has no
 	// abort, so it finishes redrawing regardless and the next Show will

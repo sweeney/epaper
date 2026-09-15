@@ -196,7 +196,7 @@ localises a different bug:
    here is a *packing* bug, isolated from drawing.
 3. **End to end**: render in Go, pack, compare against `conformance.bin`.
 
-Only once (3) passes is it worth spending 25 seconds drawing it on the panel.
+Only once (3) passes is it worth spending 20 seconds drawing it on the panel.
 
 ---
 

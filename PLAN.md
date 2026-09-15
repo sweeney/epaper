@@ -3,7 +3,7 @@
 A Go library for driving e-ink panels from a Raspberry Pi.
 
 **Status:** M0–M9 complete. The library drives the panel end to end: the test
-card and the conformance pattern both draw on the wHAT in ~25.6 s, and the
+card and the conformance pattern both draw on the wHAT in ~20.5 s, and the
 conformance pattern is reproduced byte for byte in software with no hardware
 present.
 
@@ -62,7 +62,7 @@ library misbehave on the bench. Each is a hard requirement, not a preference.
 | **Every failure is a returned `error`** | Same reason. Sentinel errors so callers can `errors.Is` and act |
 | **No cgo** | `GOOS=linux GOARCH=arm64 go build` must produce a static binary, cross-compiled from a Mac, with no toolchain on the Pi |
 | **No root required** | A user in `spi`, `i2c` and `gpio` can drive the panel. Verified on the bench. The library must not need more |
-| **`context.Context` on anything that blocks** | A refresh takes ~25 s. That is far too long to be uncancellable |
+| **`context.Context` on anything that blocks** | A refresh takes ~20 s. That is far too long to be uncancellable |
 | **Measure, don't inherit** | Where we copy a magic constant from Pimoroni, say so in a comment and cite it. Where we copy a *delay*, test whether it is load-bearing first (§9.3) |
 
 ---
@@ -79,7 +79,7 @@ These are measurements, not assumptions, and the driver is written against them.
 | Resolution | 400 × 300 |
 | Controller | **JD79668** |
 | Inks | **four**: `BLACK=0 WHITE=1 YELLOW=2 RED=3`, simultaneously |
-| Full refresh | **25.4 s** measured, repeatable |
+| Full refresh | **25.4 s** measured with the vendor library, repeatable. Our driver does it in **20.5 s** — see §9.3 |
 | Effective resolution | genuinely 400 × 300 — 1px rules at 2/3/4/5px pitch and 1/2/4px checkerboards all render cleanly |
 | Smallest readable text | **10px**. 8px is not readable |
 | Waveform LUTs | **none to upload** — `self._luts = None`; the waveform is in panel OTP |
@@ -605,7 +605,7 @@ with `go test ./render -update`.
 Justification from the bench: the `--png` mode on the Python test card caught
 **four** layout bugs (clipped header, clipped 24px row, footer overlapping the
 checkerboard, dithered ramps drawn entirely off-screen) at roughly 50 ms each.
-Finding those on hardware would have cost 25 seconds per attempt plus a walk to
+Finding those on hardware would have cost 20-odd seconds per attempt plus a walk to
 the other room. Golden images make that the default way of working.
 
 ### 6.4 Hardware tests
@@ -827,7 +827,7 @@ depends on it.
    `Show` internally with a mutex; the `Device` doc comment says so. It is two
    lines and removes a whole class of consumer bug — a service with a ticker
    and a webhook both calling `Show` would otherwise interleave two
-   framebuffers into one picture, 25 seconds later, intermittently. To be
+   framebuffers into one picture, 20 seconds later, intermittently. To be
    implemented by the driver at M6.
 
 7. ~~**What does `NearestTo` measure "near" against?**~~ **Resolved at M1.**

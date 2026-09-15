@@ -5,7 +5,7 @@
 // inspection, and can be told to fail on demand so error paths get exercised
 // too. The bench work that motivated this library found four layout bugs in
 // roughly fifty milliseconds each this way; finding them on the panel would
-// have cost 25 seconds a go, plus a walk to the other room.
+// have cost 20 seconds a go, plus a walk to the other room.
 package mock
 
 import (

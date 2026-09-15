@@ -93,7 +93,7 @@ type Options struct {
 // This is the one-liner for proving a panel: if what appears looks like the
 // card, then the wiring, the transport, the command sequence, all four inks,
 // the dithering and the text rendering are all working. A full refresh takes
-// around 25 seconds.
+// around 20 seconds.
 //
 // The device's model name is printed first, followed by any lines given.
 //

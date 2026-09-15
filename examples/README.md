@@ -13,7 +13,7 @@ can read top to bottom.
 ## Start with `offline`
 
 The fastest way to build anything for e-ink is to not use the panel. A refresh
-takes about 25 seconds; a PNG takes about 25 milliseconds, and you can diff it.
+takes about 20 seconds; a PNG takes about 20 milliseconds, and you can diff it.
 
 Get the layout right offline, then swap `mock.New` for `inky.Open` — that one
 line is the only difference, because both satisfy [`epaper.Device`].

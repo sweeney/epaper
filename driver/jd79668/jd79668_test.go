@@ -100,7 +100,7 @@ func newDevice(t *testing.T, conn jd79668.Conn) *jd79668.Device {
 // and reference/vendor-inky/inky_jd79668.py.
 //
 // This is the part where a silent mistake produces a blank panel and a very
-// bad afternoon, 25 seconds at a time. Here it runs in microseconds.
+// bad afternoon, 20 seconds at a time. Here it runs in microseconds.
 func TestShowEmitsTheExactSequence(t *testing.T) {
 	conn := &recordingConn{}
 	d := newDevice(t, conn)
@@ -582,7 +582,7 @@ func TestVendorCommandDelayIsHonoured(t *testing.T) {
 
 // Show is documented as safe for concurrent use, and PLAN §9.6 explains why
 // that matters: a service with a ticker and a webhook both drawing would
-// otherwise interleave two framebuffers into one picture — 25 seconds later,
+// otherwise interleave two framebuffers into one picture — 20 seconds later,
 // intermittently, on a display nobody is watching.
 //
 // The assertion is not merely "no data race". It is that each refresh's

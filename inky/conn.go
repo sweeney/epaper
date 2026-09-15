@@ -150,7 +150,7 @@ func (c *conn) Close() error {
 }
 
 // sleep waits, but gives up if the context is cancelled first. A refresh takes
-// 25 seconds, so every wait in this package has to be interruptible.
+// 20 seconds, so every wait in this package has to be interruptible.
 func sleep(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()

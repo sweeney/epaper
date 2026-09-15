@@ -1,7 +1,7 @@
 // Command hello is the smallest useful epaper program.
 //
 // It finds the panel, draws a line of text, and shows it. A full refresh takes
-// about 25 seconds.
+// about 20 seconds.
 //
 //	go run ./examples/hello
 //

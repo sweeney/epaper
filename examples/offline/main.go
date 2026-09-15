@@ -2,7 +2,7 @@
 //
 //	go run ./examples/offline -o panel.png
 //
-// This is how to develop for e-ink. A refresh takes about 25 seconds and
+// This is how to develop for e-ink. A refresh takes about 20 seconds and
 // happens in another room; a PNG takes about 25 milliseconds and you can diff
 // it. Get the layout right here, then change one line.
 //

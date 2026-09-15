@@ -30,7 +30,7 @@ run in CI:
 
 ```bash
 make test-hw HOST=user@your-pi
-make testcard HOST=user@your-pi    # draws on the panel, ~25 s
+make testcard HOST=user@your-pi    # draws on the panel, ~20 s
 ```
 
 `go test -c` compiles one package, which is why every hardware test is in
@@ -39,7 +39,7 @@ make testcard HOST=user@your-pi    # draws on the panel, ~25 s
 ### Tests come first
 
 Red-green, throughout. The failing test is written and seen to fail before the
-implementation exists. This is not ceremony: on hardware with a 25-second
+implementation exists. This is not ceremony: on hardware with a 20-second
 feedback loop, a test that has never failed is a test you cannot trust.
 
 Two habits that have already paid for themselves:
@@ -86,7 +86,7 @@ Adding one should be a new package plus one line. Concretely:
 **2. Write the recording test.** This is the valuable one. Assert the exact
 byte sequence against a fake `Conn`, the way
 `driver/jd79668.TestShowEmitsTheExactSequence` does. A silent mistake here is
-a blank panel and a very bad afternoon, 25 seconds at a time; in a test it is
+a blank panel and a very bad afternoon, 20 seconds at a time; in a test it is
 microseconds.
 
 **3. Add one case to `inky.OpenWith`,** mapping the EEPROM's display variant
