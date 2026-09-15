@@ -12,6 +12,13 @@ REMOTE  := /tmp/epaper-hwtest
 GOLANGCI         := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 GOLANGCI_VERSION := latest
 
+# Long enough to catch a crash introduced since the last run, short enough to
+# sit in a pre-push check. Raise it when actually hunting.
+FUZZTIME ?= 30s
+
+# The packages holding golden images. Anything else rejects -update.
+GOLDEN_PKGS := ./render ./testcard
+
 .DEFAULT_GOAL := check
 
 ## test: run the pure packages on this machine, fast
@@ -31,9 +38,12 @@ cover-html: cover
 	go tool cover -html=coverage.out
 
 ## golden: regenerate testdata/golden — REVIEW THE DIFF before committing
+#
+# Only the packages that import internal/golden define -update, so this cannot
+# be $(PKGS): every other package would refuse the flag.
 .PHONY: golden
 golden:
-	go test ./render -update
+	go test $(GOLDEN_PKGS) -update
 	@echo
 	@echo "Goldens regenerated. Review the diff: a golden accepted without"
 	@echo "being looked at asserts nothing at all."
@@ -67,12 +77,22 @@ tidy:
 	@git diff --exit-code go.mod go.sum 2>/dev/null \
 		|| { echo "go.mod/go.sum are not tidy — commit the result of 'go mod tidy'"; exit 1; }
 
-## build: cross-compile for the Pi (and check the mock path stays portable)
+## build: cross-compile for every platform CI builds
 .PHONY: build
 build:
-	GOOS=linux GOARCH=arm64 go build $(PKGS)
-	GOOS=linux GOARCH=arm   go build $(PKGS)
-	GOOS=darwin GOARCH=arm64 go build $(PKGS)
+	@set -e; for t in linux/arm64 linux/arm linux/amd64 darwin/arm64 windows/amd64; do \
+		printf "  %-16s" "$$t"; \
+		GOOS=$${t%/*} GOARCH=$${t#*/} CGO_ENABLED=0 go build $(PKGS); \
+		echo ok; \
+	done
+	@# 32-bit ARM is what proves the ioctl struct layout for a Pi Zero;
+	@# the assertions are compile-time, so building is the test.
+
+## fuzz: a short fuzzing run over the parsers
+.PHONY: fuzz
+fuzz:
+	go test ./inky -run FuzzParseEEPROM -fuzz FuzzParseEEPROM -fuzztime $(FUZZTIME)
+	go test . -run FuzzPack -fuzz FuzzPack -fuzztime $(FUZZTIME)
 
 ## check: what CI runs — do this before pushing
 .PHONY: check
@@ -89,7 +109,7 @@ test-hw:
 	ssh $(HOST) '$(REMOTE) -test.v; rc=$$?; rm -f $(REMOTE); exit $$rc'
 	@rm -f $(REMOTE:%=%.bin)
 
-## testcard: draw Test Card F on the real panel — ~25 s of refresh
+## testcard: draw the test card on the real panel — ~20 s of refresh
 .PHONY: testcard
 testcard:
 	GOOS=linux GOARCH=arm64 go build -o /tmp/epaper-testcard ./cmd/epaper-testcard
