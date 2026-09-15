@@ -513,7 +513,11 @@ epaper/
   internal/spidev/        /dev/spidev ioctl transport
   internal/i2c/           /dev/i2c ioctl transport
   internal/gpiocdev/      GPIO character device lines
-  cmd/epaper-testcard/    Test Card F, as a demo and hardware acceptance test
+  cmd/epaper-testcard/    the test card, as a demo and hardware acceptance test
+  examples/               four worked consumer programs
+  hwtest/                 every test that needs real hardware   [build tag]
+  internal/golden/        golden-image comparison, test-only
+  internal/cmd/testreport/ `go test -json` -> an HTML report
   testdata/golden/        reference PNGs
 ```
 
@@ -525,6 +529,11 @@ Rules:
   unit tested.** That is most of the library by volume.
 - **`driver/jd79668` depends on interfaces, not on `internal/spidev`.** See §6.2
   — this is what makes the driver testable.
+- **All hardware tests live in `hwtest/`**, not beside the code they exercise.
+  `go test -c` compiles one package, and one binary is what gets shipped to
+  the Pi.
+- **`testcard` is public.** It started in `internal/`, which was wrong: proving
+  a panel is the first thing a consumer needs to do.
 
 ### 5.1 Dependencies
 

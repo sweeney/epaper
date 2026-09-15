@@ -126,8 +126,12 @@ func (d *Device) Close() error {
 
 // readBufsiz returns the kernel's configured maximum SPI transfer size,
 // falling back to the compiled-in default if sysfs does not say.
-func readBufsiz() int {
-	b, err := os.ReadFile(bufsizPath)
+func readBufsiz() int { return readBufsizFrom(bufsizPath) }
+
+// readBufsizFrom is readBufsiz against a given path, so it can be tested
+// without a kernel that has been reconfigured.
+func readBufsizFrom(path string) int {
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return DefaultChunkSize
 	}
