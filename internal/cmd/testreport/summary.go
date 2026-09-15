@@ -55,8 +55,9 @@ func writeSummary(w io.Writer, run *Run, opts SummaryOptions) error {
 	writeSlowest(&b, run)
 
 	if opts.Artifact != "" {
-		fmt.Fprintf(&b, "\n---\n\nThe **%s** artifact has the same results as a single HTML page, "+
-			"with every render inlined and any that changed shown expected-beside-actual.\n", opts.Artifact)
+		fmt.Fprintf(&b, "\n---\n\n📄 **%s** — the same results as one self-contained page, "+
+			"with every render inlined and any that changed shown expected-beside-actual. "+
+			"It is uploaded unzipped, so it opens straight from the artifact list.\n", opts.Artifact)
 	}
 
 	_, err := io.WriteString(w, b.String())

@@ -44,20 +44,35 @@ jobs:
             -commit "${GITHUB_SHA}" \
             -repo "${GITHUB_REPOSITORY}" \
             -summary "${GITHUB_STEP_SUMMARY}" \
-            -artifact "test-report"
+            -artifact "test-report.html"
         continue-on-error: true
 
 
+      # archive: false uploads the file UNZIPPED, which is the difference
+      # between clicking it open and having to expand a zip first. It only
+      # works for a single file and ignores `name` — the artifact is named
+      # after the file — so the raw data goes in a separate, zipped one below.
+      #
       # always(): a failing run is the one you most want to look at.
       - name: upload report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-report
+          path: test-report.html
+          archive: false
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: upload raw results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: raw-results
           path: |
-            test-report.html
             test.json
             coverage.out
+          if-no-files-found: warn
           retention-days: 30
 
       # Goldens that did not match are written beside them as <name>.got.png.
