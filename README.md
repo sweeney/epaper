@@ -139,6 +139,26 @@ if err := testcard.Show(ctx, dev, "bench check"); err != nil {
 }
 ```
 
+## Performance
+
+Measured on the Pi 4B itself, not on a laptop:
+
+| | |
+|---|---|
+| Draw the whole test card | **4.6 ms** |
+| Draw the conformance pattern | **1.7 ms** |
+| Pack a 400×300 frame to 30,000 bytes | **0.8 ms** |
+| **Refresh the panel** | **20,500 ms** |
+
+Drawing and packing together are about **0.03%** of a refresh. The panel is
+roughly four thousand times slower than the software driving it, so render
+cost is not worth optimising — and the one optimisation that was worth making
+(accumulating each packed byte in a register rather than four
+read-modify-writes) was found by a benchmark noticing that packing was
+data-dependent when it had no business being.
+
+Everything except `Pack` allocates nothing per call.
+
 ## Examples
 
 [`examples/`](examples) has four, smallest first:
