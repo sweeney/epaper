@@ -53,6 +53,16 @@ jobs:
       # works for a single file and ignores `name` — the artifact is named
       # after the file — so the raw data goes in a separate, zipped one below.
       #
+      # Trade-off, measured rather than assumed: the browser download is now a
+      # plain .html (content-type: text/html), but `gh run download` cannot
+      # fetch it — the CLI assumes every artifact is a zip and fails with
+      # "not a valid zip file". Fetch it from the web UI, or by API:
+      #
+      #   gh api repos/OWNER/REPO/actions/artifacts/ID/zip > report.html
+      #
+      # raw-results below is a normal zip, so `gh run download` still works
+      # for the machine-readable output.
+      #
       # always(): a failing run is the one you most want to look at.
       - name: upload report
         if: always()
