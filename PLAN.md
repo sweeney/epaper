@@ -767,8 +767,13 @@ depends on it.
    the palette for tidiness would silently swap the panel's colours. This needs
    a prominent comment on the type and a test that pins JD79668's order.
 
-2. **Does `Show` re-init every time?** The vendor driver does, because it
-   `DSLP`s at the end. Keep that behaviour for M6; revisit only with evidence.
+2. ~~**Does `Show` re-init every time?**~~ **Resolved: yes, and it must.**
+   The controller is put into deep sleep at the end of every refresh, so by
+   the next one it has forgotten its configuration entirely. Reset and the
+   eleven init commands run before each `DTM`, and
+   `jd79668.TestInitRunsBeforeEveryShow` pins it. No evidence has emerged to
+   revisit it, and the bench measurement of a clean 20.5 s refresh is against
+   this behaviour.
 
 3. ~~**Are the 300 ms per-command delays load-bearing?**~~ **Resolved: no.
    The driver omits them.**
@@ -824,9 +829,15 @@ depends on it.
    refresh, not a dead panel — but a cold room is an experiment nobody has
    run.
 
-4. **Chunk size.** 4096 is spidev's default `bufsiz`, but it is a module
-   parameter. Read `/sys/module/spidev/parameters/bufsiz` at open and use it,
-   rather than hard-coding? Probably yes — costs nothing.
+4. ~~**Chunk size.**~~ **Resolved: read it, as suspected.** `spidev.Open`
+   reads `/sys/module/spidev/parameters/bufsiz` and falls back to 4096 only if
+   that cannot be parsed. It cost nothing, exactly as predicted, and it means
+   a kernel with a larger `bufsiz` sends the framebuffer in one transfer
+   instead of eight.
+
+   `readBufsizFrom` is tested against a missing file, junk, an empty file,
+   zero and a negative value — all of which must fall back rather than produce
+   a non-positive chunk size, which would make `Write` loop forever.
 
 5. **Do we expose partial refresh?** JD79668 may support it. We have not tested
    it, no consumer has asked, and it complicates the API. Out of scope for v1;
