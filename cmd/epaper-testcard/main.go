@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/sweeney/epaper"
+	"github.com/sweeney/epaper/driver/jd79668"
 	"github.com/sweeney/epaper/inky"
 	"github.com/sweeney/epaper/render"
 	"github.com/sweeney/epaper/testcard"
@@ -45,8 +46,8 @@ func run() error {
 		pattern = flag.String("pattern", "testcard", "which pattern: testcard or conformance")
 		note    = flag.String("note", "", "extra line of text on the card")
 		timeout = flag.Duration("timeout", 2*time.Minute, "how long to wait for the refresh")
-		fast    = flag.Bool("fast", false,
-			"skip the vendor's 300ms per-command delay (PLAN §9.3 — look at the panel afterwards)")
+		vendor  = flag.Bool("vendor-timing", false,
+			"restore the reference implementation's 300ms per-command delay (~4.9s slower)")
 	)
 	flag.Parse()
 
@@ -64,7 +65,7 @@ func run() error {
 		return writePNG(*pngPath, img)
 	}
 
-	dev, err := inky.OpenWith(inky.Options{CommandDelay: commandDelay(*fast)})
+	dev, err := inky.OpenWith(inky.Options{CommandDelay: commandDelay(*vendor)})
 	if err != nil {
 		return err
 	}
@@ -89,11 +90,11 @@ func run() error {
 	return nil
 }
 
-// commandDelay turns -fast into the driver's convention, where a negative
-// value means no delay at all and zero means "use the default".
-func commandDelay(fast bool) time.Duration {
-	if fast {
-		return -1
+// commandDelay turns -vendor-timing into a delay. Zero is the driver's
+// default and means none.
+func commandDelay(vendor bool) time.Duration {
+	if vendor {
+		return jd79668.VendorCommandDelay
 	}
 	return 0
 }

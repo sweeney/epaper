@@ -11,10 +11,9 @@ This document remains the contract for what was built and why; §9 records the
 decisions taken along the way, including three places where the plan was wrong
 and had to be corrected against measurements (§9.8, §2.3, §9.3).
 
-**One question is still open and needs a person, not a machine: §9.3.** The
-vendor's 300 ms per-command delays cost 4.9 s of every 25.4 s refresh, and
-removing them is repeatable; whether the faster output is visually clean needs
-someone in front of the panel.
+Every question in §9 is now resolved. The last one, §9.3, needed a person in
+front of the panel and got one: the vendor's 300 ms per-command delays are a
+debugging leftover, and dropping them takes 19% off every refresh.
 
 **Picking this up cold?** Read §1 for the goal, §2 for the hardware facts, §4
 for the API being committed to — then §11 for how to reach the bench, what
@@ -762,37 +761,59 @@ depends on it.
 2. **Does `Show` re-init every time?** The vendor driver does, because it
    `DSLP`s at the end. Keep that behaviour for M6; revisit only with evidence.
 
-3. **Are the 300 ms per-command delays load-bearing?** *Measured at M8;
-   visual verdict outstanding.*
+3. ~~**Are the 300 ms per-command delays load-bearing?**~~ **Resolved: no.
+   The driver omits them.**
 
    The vendor driver sleeps 300 ms before *every* command. Sixteen commands
    per refresh predicted ~4.8 s of a 25.4 s refresh, and the measurement
-   matches almost exactly:
+   matched almost exactly:
 
-   | Timing | Pattern | Refresh |
-   |---|---|---|
-   | vendor (300 ms) | test card | **25.628 s** |
-   | vendor (300 ms) | conformance | **25.249 s** |
-   | none (`-fast`) | test card | **20.762 s** |
-   | none (`-fast`) | conformance | **20.437 s**, **20.447 s** |
+   | Timing | Refresh |
+   |---|---|
+   | vendor (300 ms) | **25.628 s** / 25.249 s |
+   | none | **20.762 s** / 20.437 s / 20.447 s |
 
-   So the delays cost **~4.9 s, about 19% of every refresh**, and removing
-   them is repeatable to within 10 ms.
+   So the delays cost **~4.9 s, about 19% of every refresh**.
 
-   Two things did *not* happen, both worth recording:
+   Three lines of evidence, because "it worked three times" is not evidence
+   about a race:
 
-   - No refresh returned early. The concern raised in §2.3 — that a
-     `WaitReady` issued too soon after `PON` could return on a stale ready,
-     since an idle panel reads ready — did not materialise across three fast
-     runs. `jd79668.DefaultMinRefreshTime` would have caught it.
-   - No error of any kind.
+   1. **It looks right.** Drawn on the panel and inspected by eye: the output
+      is indistinguishable from the vendor-timed version. This was the part a
+      machine could not settle.
 
-   **Still outstanding: whether the fast output is visually clean.** That
-   needs a person in front of the panel, and it is the only part of this
-   experiment a machine cannot do. Until someone has looked, the driver keeps
-   the vendor's value: a fast driver that corrupts the display is worse than
-   a slow one that works. `Options.CommandDelay` / `epaper-testcard -fast` is
-   the switch, so flipping the default is a one-line change once judged.
+   2. **It is not intermittent.** A 10-refresh soak with no delay
+      (`hwtest.TestSoak`) gave 20.468 s … 20.786 s — a **318 ms spread across
+      all ten**, no errors, no early returns. If the delay were masking a
+      settling race between driving CS/DC and clocking the byte out, the
+      symptom would be occasional, not absent.
+
+   3. **It reads like a debugging leftover, not a specification.** The
+      identical `time.sleep(0.3)` appears in the vendor's drivers for
+      JD79668, JD79661, E673, E640, EL133UF1 and SSD2683 — six controllers
+      from different manufacturers with different timing characteristics.
+      A datasheet-derived delay would not be the same number for all of them.
+
+      The tell is stronger than that. In exactly those drivers, the shared
+      `_spi_write` helper is **defined but never called**: `_send_command`
+      was rewritten to inline the chip-select handling *and* a sleep, leaving
+      the original orphaned. The older drivers — SSD1608, SSD1683, UC8159,
+      AC073TC1A — still call `_spi_write` and have **no sleep at all**.
+
+      That is what a debugging session looks like after it ships.
+
+   **Decision: `jd79668.DefaultCommandDelay` is 0.** This is the one place
+   the driver knowingly departs from the reference, which is why the case is
+   written out here at length. `jd79668.VendorCommandDelay` restores the old
+   behaviour in one word, and `epaper-testcard -vendor-timing` exercises it.
+
+   **What is still untested**, and worth knowing before trusting this
+   anywhere unusual: every measurement was at room temperature, on one board,
+   waking from `DSLP` rather than from a cold power-on. E-ink waveforms are
+   temperature-dependent. There is no risk of damage — the waveform lives in
+   panel OTP and we upload no LUTs, so the failure mode is a poor-looking
+   refresh, not a dead panel — but a cold room is an experiment nobody has
+   run.
 
 4. **Chunk size.** 4096 is spidev's default `bufsiz`, but it is a module
    parameter. Read `/sys/module/spidev/parameters/bufsiz` at open and use it,

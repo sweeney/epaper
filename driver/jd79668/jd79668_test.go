@@ -84,7 +84,6 @@ func newDevice(t *testing.T, conn jd79668.Conn) *jd79668.Device {
 	t.Helper()
 	d, err := jd79668.New(conn, jd79668.Config{
 		Width: 400, Height: 300,
-		CommandDelay: -1,
 		// A fake transport replies instantly, which is exactly what the
 		// disconnected-BUSY check exists to catch. Disable it here and test
 		// it deliberately in TestRefreshTooFastIsReported.
@@ -230,7 +229,7 @@ func TestFramebufferIsSentWhole(t *testing.T) {
 func TestResolutionCommandFollowsTheGeometry(t *testing.T) {
 	conn := &recordingConn{}
 	d, err := jd79668.New(conn, jd79668.Config{
-		Width: 640, Height: 480, CommandDelay: -1, MinRefreshTime: -1,
+		Width: 640, Height: 480, MinRefreshTime: -1,
 	})
 	if err != nil {
 		t.Fatalf("New(): %v", err)
@@ -485,7 +484,7 @@ func opsContainBefore(ops []op, kind string, cmd byte) bool {
 func TestRefreshTooFastIsReported(t *testing.T) {
 	conn := &recordingConn{}
 	d, err := jd79668.New(conn, jd79668.Config{
-		Width: 400, Height: 300, CommandDelay: -1,
+		Width: 400, Height: 300,
 		MinRefreshTime: time.Second,
 	})
 	if err != nil {
@@ -507,7 +506,7 @@ func TestRefreshTooFastIsReported(t *testing.T) {
 func TestRefreshOfPlausibleLengthIsAccepted(t *testing.T) {
 	conn := &slowConn{delay: 20 * time.Millisecond}
 	d, err := jd79668.New(conn, jd79668.Config{
-		Width: 400, Height: 300, CommandDelay: -1,
+		Width: 400, Height: 300,
 		MinRefreshTime: 10 * time.Millisecond,
 	})
 	if err != nil {
@@ -527,4 +526,55 @@ type slowConn struct {
 func (c *slowConn) WaitReady(ctx context.Context, d time.Duration) error {
 	time.Sleep(c.delay)
 	return c.recordingConn.WaitReady(ctx, d)
+}
+
+// The default must be no delay. This is the driver's one deliberate departure
+// from the reference, and a change of heart should have to edit a test that
+// says so out loud.
+func TestDefaultIsNoCommandDelay(t *testing.T) {
+	if jd79668.DefaultCommandDelay != 0 {
+		t.Errorf("DefaultCommandDelay = %v, want 0 — see PLAN §9.3", jd79668.DefaultCommandDelay)
+	}
+	if jd79668.VendorCommandDelay != 300*time.Millisecond {
+		t.Errorf("VendorCommandDelay = %v, want the reference's 300ms", jd79668.VendorCommandDelay)
+	}
+
+	// And a refresh with the default must not actually sleep: 20 commands at
+	// the vendor's delay would be 6 seconds.
+	conn := &recordingConn{}
+	d, err := jd79668.New(conn, jd79668.Config{Width: 400, Height: 300, MinRefreshTime: -1})
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+	started := time.Now()
+	if err := d.Show(context.Background(), d.NewImage()); err != nil {
+		t.Fatalf("Show(): %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Errorf("a refresh against a fake transport took %s; the driver is sleeping", elapsed)
+	}
+}
+
+// ...but asking for the vendor's timing must genuinely slow it down, or the
+// escape hatch is decorative.
+func TestVendorCommandDelayIsHonoured(t *testing.T) {
+	conn := &recordingConn{}
+	d, err := jd79668.New(conn, jd79668.Config{
+		Width: 4, Height: 4,
+		CommandDelay:   20 * time.Millisecond,
+		MinRefreshTime: -1,
+	})
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+
+	started := time.Now()
+	if err := d.Show(context.Background(), d.NewImage()); err != nil {
+		t.Fatalf("Show(): %v", err)
+	}
+	// 16 commands at 20ms is 320ms; allow plenty of slack, the point is that
+	// it is clearly not zero.
+	if elapsed := time.Since(started); elapsed < 200*time.Millisecond {
+		t.Errorf("a refresh with a 20ms command delay took %s; the delay is being ignored", elapsed)
+	}
 }

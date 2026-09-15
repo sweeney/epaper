@@ -70,9 +70,10 @@ type Options struct {
 	SPISpeedHz uint32
 
 	// CommandDelay is the pause before each controller command. Zero means
-	// the driver's default; negative means no delay at all. See PLAN §9.3 —
-	// whether the vendor's 300 ms is load-bearing is still open, and this is
-	// the knob for finding out.
+	// none, which is this driver's default and makes a refresh about 4.9 s
+	// faster than the reference implementation. Set it to
+	// [jd79668.VendorCommandDelay] to restore the vendor's timing; see there
+	// for the evidence, and PLAN §9.3 for the full case.
 	CommandDelay time.Duration
 
 	// BusyTimeout bounds a single wait for the panel. Zero means the

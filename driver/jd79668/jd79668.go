@@ -119,16 +119,31 @@ const (
 	// the line, which is unambiguous and has no race.
 	DefaultMinRefreshTime = time.Second
 
-	// DefaultCommandDelay is the pause before each command byte.
+	// DefaultCommandDelay is the pause before each command byte: none.
 	//
-	// The vendor sleeps 300 ms before EVERY command. With sixteen commands
-	// per refresh that is about 4.8 s of a 25.4 s refresh spent waiting,
-	// and nothing in the vendor source explains it. PLAN §9.3 has the
-	// experiment to find out whether it is load-bearing; until someone has
-	// looked at the panel afterwards, the driver keeps the vendor's value,
-	// because a fast driver that corrupts the display is worse than a slow
-	// one that works.
-	DefaultCommandDelay = 300 * time.Millisecond
+	// The vendor driver sleeps 300 ms before EVERY command, which is about
+	// 4.9 s of a 25.4 s refresh. We do not, and this is the one place this
+	// driver knowingly departs from the reference. PLAN §9.3 has the full
+	// case; in short:
+	//
+	//   - Measured: 25.6 s with the delay, 20.4 s without, repeatable to
+	//     10 ms. A 10-refresh soak without it varied by 318 ms in total.
+	//   - Inspected: the same 0.3 appears in three vendor drivers for
+	//     unrelated controllers from different manufacturers, which is not
+	//     how a datasheet-derived timing looks. In exactly those drivers,
+	//     and no others, the shared _spi_write helper is defined but never
+	//     called — the signature of someone inlining the SPI call to add a
+	//     sleep while debugging, and the original never being removed.
+	//   - Looked at: the output is indistinguishable on the panel.
+	//
+	// Set [Config.CommandDelay] to [VendorCommandDelay] to put it back. Do
+	// that if a panel misbehaves, and please write down what it did.
+	DefaultCommandDelay = 0
+
+	// VendorCommandDelay is the pause the reference implementation uses. It
+	// is here so restoring the vendor's exact timing is one word, not a
+	// magic number rediscovered under pressure.
+	VendorCommandDelay = 300 * time.Millisecond
 )
 
 // Config describes a panel built around this controller.
@@ -140,8 +155,10 @@ type Config struct {
 	// name from their EEPROM; it defaults to the controller name.
 	Model string
 
-	// CommandDelay is the pause before each command. Zero means
-	// [DefaultCommandDelay]; use a negative value for no delay at all.
+	// CommandDelay is the pause before each controller command. Zero or
+	// less means none, which is [DefaultCommandDelay] and what this driver
+	// does by default; see there for why. Use [VendorCommandDelay] to
+	// restore the reference implementation's timing.
 	CommandDelay time.Duration
 
 	// BusyTimeout bounds a single wait for the panel. Zero means
@@ -182,9 +199,6 @@ func New(conn Conn, cfg Config) (*Device, error) {
 	}
 	if cfg.Model == "" {
 		cfg.Model = "JD79668"
-	}
-	if cfg.CommandDelay == 0 {
-		cfg.CommandDelay = DefaultCommandDelay
 	}
 	if cfg.BusyTimeout == 0 {
 		cfg.BusyTimeout = DefaultBusyTimeout

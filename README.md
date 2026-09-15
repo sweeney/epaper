@@ -64,7 +64,7 @@ These come from things that actually bit us on the bench, not from taste.
 | No cgo | `GOOS=linux GOARCH=arm64 go build` gives a static binary, cross-compiled from a Mac |
 | No root required | A user in `spi`, `i2c` and `gpio` can drive the panel |
 | `context.Context` on anything that blocks | A refresh takes ~25 s |
-| Measure, don't inherit | Copied constants are cited; copied *delays* are tested for load-bearingness first |
+| Measure, don't inherit | Copied constants are cited; copied *delays* are tested for load-bearingness first — one turned out to be a debugging leftover costing 19% of every refresh |
 
 ## Supported hardware
 
@@ -74,7 +74,7 @@ These come from things that actually bit us on the bench, not from taste.
 | Board | Inky wHAT 4.2" (Pimoroni) |
 | Resolution | 400 × 300 |
 | Inks | Black, white, yellow and red — **all four simultaneously** |
-| Refresh | ~25 s, full panel only |
+| Refresh | **~20.5 s**, full panel only |
 
 The split is **by controller**, with a thin board package on top, because that
 is the shape the hardware already has — controllers are made by Solomon Systech
