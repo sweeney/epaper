@@ -41,14 +41,39 @@ func TestI2CReadsTheEEPROM(t *testing.T) {
 	t.Logf("EEPROM: %dx%d %s pcb %s %q written %s",
 		got.Width, got.Height, got.Colour, got.PCBRevision(), got.Model, got.WriteTime)
 
-	if got.Width != 400 || got.Height != 300 {
-		t.Errorf("geometry = %dx%d, want 400x300", got.Width, got.Height)
+	// Deliberately not asserting a size or a model name: this suite runs
+	// against more than one board, and pinning either here would fail on the
+	// other for a reason that has nothing to do with I2C. What this test is
+	// for is that the combined write-then-read returns a record at all rather
+	// than the padding a byte-mode SMBus read gives back — so the assertions
+	// are the ones that separate a real record from garbage.
+	//
+	// The per-board values are pinned where they belong, against captured
+	// fixtures, in inky.TestParseRealPHat and inky.TestParseEEPROMRealBoard.
+	if got.Width <= 0 || got.Height <= 0 {
+		t.Errorf("geometry = %dx%d, which is not a real panel", got.Width, got.Height)
 	}
-	if got.Model != "Red/Yellow wHAT (JD79668)" {
-		t.Errorf("Model = %q, want %q", got.Model, "Red/Yellow wHAT (JD79668)")
+	if got.Model == "" {
+		t.Error("Model is empty; the display variant did not resolve")
 	}
 	if got.Colour != "red/yellow" {
-		t.Errorf("Colour = %q, want %q", got.Colour, "red/yellow")
+		t.Errorf("Colour = %q, want %q — all four-ink Inky boards report this", got.Colour, "red/yellow")
+	}
+
+	// The board has to be one this library will actually drive, or every
+	// other test in this suite is about to fail more confusingly.
+	//
+	// Closing it matters: Open claims the GPIO lines, and holding them here
+	// would make TestGPIOClaimsThePanelLines fail with a busy line — which is
+	// exactly the misleading failure ErrChipSelectBusy exists to explain, and
+	// it is no more fun when this suite causes it.
+	dev, err := inky.Open()
+	if err != nil {
+		t.Errorf("inky.Open() with this board attached: %v", err)
+		return
+	}
+	if err := dev.Close(); err != nil {
+		t.Errorf("Close(): %v", err)
 	}
 }
 
@@ -128,7 +153,7 @@ func TestSPIOpens(t *testing.T) {
 	}
 	defer dev.Close()
 
-	t.Logf("SPI chunk size: %d bytes (framebuffer is 30000)", dev.ChunkSize())
+	t.Logf("SPI chunk size: %d bytes", dev.ChunkSize())
 	if dev.ChunkSize() < 1 {
 		t.Errorf("ChunkSize() = %d, want a positive size", dev.ChunkSize())
 	}

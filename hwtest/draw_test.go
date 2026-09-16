@@ -50,8 +50,50 @@ func TestDrawConformance(t *testing.T) {
 	t.Logf("conformance refresh took %s", time.Since(started).Round(time.Millisecond))
 }
 
+// TestDrawOrientation is the acceptance test for a driver that rotates.
+//
+// The JD79661 sends its frame turned a quarter turn and padded on one axis. A
+// sign error there yields a picture that is complete, correctly coloured and
+// upside down — which every byte-level test in this repo passes. Nothing but
+// looking at the glass settles it, so this draws a card built for looking at:
+// four differently-inked corners and an arrow pointing at the top-left one.
+// See testcard.DrawOrientation for how to read it.
+//
+// It runs before the test card so that on a panel the test card cannot fit,
+// this is what is left showing.
+func TestDrawOrientation(t *testing.T) {
+	dev, err := inky.Open()
+	if err != nil {
+		t.Fatalf("inky.Open(): %v", err)
+	}
+	defer dev.Close()
+
+	c := render.NewCanvasFor(dev)
+	testcard.DrawOrientation(c)
+	if err := c.Err(); err != nil {
+		t.Fatalf("drawing: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), drawTimeout)
+	defer cancel()
+
+	started := time.Now()
+	if err := dev.Show(ctx, c.Image()); err != nil {
+		t.Fatalf("Show(): %v", err)
+	}
+	t.Logf("orientation refresh took %s", time.Since(started).Round(time.Millisecond))
+	t.Log("LOOK AT THE PANEL: red square top-left, small yellow square top-right, " +
+		"black square with a white hole bottom-left, checker bottom-right, " +
+		"arrow pointing top-left. A black rule along the top edge only, a red one down the left.")
+}
+
 // TestDrawTestCard is the visual acceptance test, and it runs last so it is
 // what the panel is left showing.
+//
+// The card lays itself out from the panel's own bounds, so this runs on every
+// supported panel — a 250x122 pHAT gets the same elements as a 400x300 wHAT in
+// a smaller frame. It did not always: the layout was absolute pixels, and on
+// the pHAT the disc fell off the bottom edge. See PLAN §13.4.
 func TestDrawTestCard(t *testing.T) {
 	dev, err := inky.Open()
 	if err != nil {

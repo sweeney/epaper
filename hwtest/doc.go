@@ -5,7 +5,7 @@
 // `go test -c` compiles a single package into a single binary, and one binary
 // is what gets shipped to the Pi:
 //
-//	make test-hw HOST=sweeney@192.168.1.6
+//	make test-hw HOST=user@your-pi
 //
 // That cross-compiles, scps, runs and removes the binary. No Go toolchain is
 // needed on the Pi.
