@@ -152,21 +152,49 @@ func (c *Canvas) TextFitted(r image.Rectangle, s string, ff FontFamily, i epaper
 		return 0
 	}
 
+	size, face, err := FittedSize(r, s, ff)
+	if err != nil {
+		c.fail(fmt.Errorf("render: text fitted: %w", err))
+		return 0
+	}
+	c.Text(r.Min, s, face, i)
+	return size
+}
+
+// FittedSize reports the largest size at which s fits in r, and the face at
+// that size, without drawing anything.
+//
+// It is what [Canvas.TextFitted] uses to choose a size, exposed separately for
+// callers that need to know whether text will fit before committing to it.
+// TextFitted deliberately fails loudly when nothing fits — silently shrinking
+// text to nothing is the failure it exists to prevent — which makes it the
+// wrong tool for a layout that wants to leave an element out instead.
+//
+// The test card uses it for exactly that: a panel can be too small for a
+// heading inside the central disc, and on such a panel the right answer is a
+// card without a heading, not a card that refuses to draw.
+//
+// Sizes are tried from the height of r downwards. Note that the bundled
+// bitmap faces have a minimum line height of about 13px, so a box shorter than
+// that fits no text at any size — which is a property of the fonts, not a bug
+// here.
+func FittedSize(r image.Rectangle, s string, ff FontFamily) (int, font.Face, error) {
+	if ff == nil {
+		return 0, nil, fmt.Errorf("font family is nil")
+	}
+	if r.Empty() {
+		return 0, nil, fmt.Errorf("rectangle %v is empty", r)
+	}
 	for size := r.Dy(); size >= 1; size-- {
 		face, err := ff(size)
 		if err != nil {
-			c.fail(fmt.Errorf("render: text fitted: font family at %dpx: %w", size, err))
-			return 0
+			return 0, nil, fmt.Errorf("font family at %dpx: %w", size, err)
 		}
 		if MeasureText(s, face) <= r.Dx() && LineHeight(face) <= r.Dy() {
-			c.Text(r.Min, s, face, i)
-			return size
+			return size, face, nil
 		}
 	}
-
-	c.fail(fmt.Errorf("render: text fitted: %q does not fit in %v at any size: %w",
-		s, r, ErrTextDoesNotFit))
-	return 0
+	return 0, nil, fmt.Errorf("%q does not fit in %v at any size: %w", s, r, ErrTextDoesNotFit)
 }
 
 // MeasureText returns the advance width of a string in pixels, kerning
