@@ -12,6 +12,9 @@ independent discoveries:
 
   - The JD79668 initialisation and refresh command sequences, and every
     payload constant in them (driver/jd79668).
+  - The JD79661 initialisation and refresh command sequences, every payload
+    constant in them, and its rotated-and-padded frame layout
+    (driver/jd79661).
   - The panel reset timing.
   - The 2-bits-per-pixel framebuffer packing expression.
   - The EEPROM record layout, its colour table and its display-variant table

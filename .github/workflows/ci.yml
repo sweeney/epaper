@@ -168,7 +168,9 @@ jobs:
         run: go test -c -tags hardware -o /dev/null ./hwtest
 
       # The ioctl structs carry compile-time layout assertions, so building
-      # for 32-bit ARM is what proves the Pi Zero case. Nobody here has one.
+      # for 32-bit ARM is what proves the 32-bit-userland case. The bench Pi
+      # Zero 2 W runs a 64-bit userland, so nothing here is exercised on real
+      # 32-bit hardware; the assertions are the whole test.
       - name: ioctl layout on 32-bit ARM
         env:
           GOOS: linux

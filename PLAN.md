@@ -629,7 +629,7 @@ Driven from the Makefile by cross-compiling a test binary, shipping it, and
 running it on the Pi:
 
 ```
-make test-hw HOST=sweeney@192.168.1.6
+make test-hw HOST=user@your-pi
 ```
 
 Note for that Makefile: **`/usr/sbin` is not on `PATH` over non-interactive
@@ -847,18 +847,47 @@ depends on it.
    it, no consumer has asked, and it complicates the API. Out of scope for v1;
    revisit if a real use case appears.
 
-9. **Rotation.** The wHAT is landscape; plenty of projects mount a panel
-   portrait. Nothing here helps: a consumer wanting portrait has to draw into
-   their own 300×400 image and transpose it into the 400×300 one the device
-   wants, which is a chore and easy to get subtly wrong.
+9. **Rotation.** Still **not** built, but no longer for want of a use case —
+   see the update below.
 
-   Deliberately **not** built. There is no consumer asking for it, and §3.2's
-   rule applies — with one real use case in hand there is something to design
-   against, and without one there is only guesswork about whether it belongs on
-   `Device` (so the driver could use the controller's own scan direction), on
-   `Canvas`, or as a pure `render.Rotate90` helper.
+   Both panels are landscape; plenty of projects mount a panel portrait. The
+   library does not help: `Bounds()` reports the panel's native geometry and
+   `Show` rejects anything else with `ErrWrongSize`, so a consumer wanting
+   portrait must draw into a transposed image of their own and rotate it, which
+   is a chore and easy to get subtly wrong.
 
-   Noted here so that the gap is a decision rather than an oversight.
+   The original argument was §3.2's: with no consumer asking, there is only
+   guesswork about whether it belongs on `Device` (so a driver could use the
+   controller's own scan direction), on `Canvas`, or as a pure
+   `render.Rotate90` helper.
+
+   **Update, 2026-09-16.** A use case did appear — portrait on the pHAT, asked
+   for and drawn on the panel. The gap was closed *as documentation* rather
+   than as API: `examples/portrait` is the whole recipe, tested, with the
+   rotation pinned by corner and by the four-turns-is-identity property.
+   Four plausible-looking wrong rotations are all caught by those tests.
+
+   That deliberately does not decide the API question, which is now sharper
+   than it was and worth writing down before someone picks it up:
+
+   - **`inky.Options{Rotate: 90}`** — `Bounds()` reports the rotated geometry
+     and `Show` rotates internally. Every existing consumer works portrait with
+     no change, the test card and dashboard included. It is also the only
+     option that can be made free: the JD79661's controller frame is natively
+     **portrait** 128×250 and the driver already rotates it to present
+     landscape, so a portrait request currently rotates twice and cancels out.
+     A driver-level option could skip both. The cost is a public API commitment
+     before v1.0, and a `Bounds()` that no longer matches the EEPROM — which
+     several tests currently assert.
+   - **`render.Rotate(img, 90)`** — honest and uncommitting, but every consumer
+     reimplements the same plumbing around it, which is what the example
+     already shows them doing.
+   - **A `-rotate` flag on `epaper-testcard`** — demo only, commits nothing,
+     helps nobody's own program.
+
+   Rotating a frame costs microseconds against an 18.5 s refresh, so
+   performance is not what decides this; where the knowledge of "which way up"
+   belongs is.
 
 6. ~~**`Device.Show` concurrency.**~~ **Resolved at M1.** Drivers serialise
    `Show` internally with a mutex; the `Device` doc comment says so. It is two
@@ -998,7 +1027,7 @@ passes, which is the useful part: **the library never depended on it.**
 Nothing was lost that is not already committed here:
 
 - The vendor source the constants derive from is at `reference/vendor-inky/`.
-- The fixtures it generated are at `testdata/`, and `testdata/README.md` §5
+- The fixtures it generated are at `testdata/`, and `testdata/README.md` §6
   covers what to do if one ever disagrees with the hardware.
 - The Pi's copy of `testcard.py` was byte-identical to the one in
   `scratch/inky-setup`.
@@ -1007,7 +1036,7 @@ To bring it back — only needed to *regenerate* fixtures, never to use the
 library:
 
 ```bash
-ssh sweeney@192.168.1.6
+ssh "$HOST"
 python3 -m venv ~/inky-trial/venv
 ~/inky-trial/venv/bin/pip install 'inky==2.5.0' 'pillow==12.3.0' 'numpy==2.5.3'
 ```
@@ -1041,14 +1070,36 @@ Note `pcbVariant` is stored times ten. An earlier draft of the parser divided
 by 10 without saying why; it is doing so because the EEPROM holds `100` for
 board revision 10.0.
 
+The Inky pHAT 2.13", captured 2026-09-16, for comparison — the same layout, and
+the only fields that differ are the geometry and the variant byte:
+
+```go
+// testdata: our Inky pHAT 2.13", EEPROM written 2026-04-15
+var phatEEPROM = []byte{
+	0xFA, 0x00, // width  = 250
+	0x7A, 0x00, // height = 122
+	0x07,       // colour = 7 -> "red/yellow", same as the wHAT
+	0x64,       // pcbVariant = 100 -> v10.0, same as the wHAT
+	0x17,       // displayVariant = 23 -> "Red/Yellow pHAT (JD79661)"
+	0x15,       // pascal length = 21
+	'2', '0', '2', '6', '-', '0', '4', '-', '1', '5', ' ',
+	'2', '3', ':', '3', '2', ':', '3', '4', '.', '2',
+}
+```
+
+That single byte at offset 6 is carrying the whole distinction between the two
+boards — same colour string, same PCB revision, same pin map — and picking the
+wrong driver from it produces a blank panel rather than an error. It is pinned
+against both captured fixtures; see §13.1.
+
 ### 11.5 The development loop
 
 ```
 make test          # pure packages, on the Mac, fast
 make golden        # regenerate testdata/golden
 make build         # cross-compile linux/arm64
-make test-hw HOST=sweeney@192.168.1.6    # ship a test binary and run on the Pi
-make testcard HOST=sweeney@192.168.1.6   # draw Test Card F on the real panel
+make test-hw HOST=user@your-pi    # ship a test binary and run on the Pi
+make testcard HOST=user@your-pi    # draw Test Card F on the real panel
 ```
 
 `test-hw` builds with `go test -c -tags hardware`, `scp`s the binary, runs it,
@@ -1139,3 +1190,193 @@ Other terms:
   that need one uploaded, getting it wrong causes ghosting or damage.
 - **Framebuffer** — here, the packed 2-bits-per-pixel byte array actually sent
   to the panel, as distinct from the `*image.Paletted` a consumer draws into.
+
+---
+
+## 13. The second panel: Inky pHAT 2.13" (JD79661)
+
+Added 2026-09-16, on a Pi Zero 2 W. The board reports itself as display
+variant **23**, `Red/Yellow pHAT (JD79661)`, 250x122, colour 7 (`red/yellow`),
+PCB v10.0 — see §11.4's sibling entry below and
+`testdata/eeprom/phat-jd79661.bin`.
+
+### 13.1 Why it is a second driver, not a parameter
+
+The JD79661 and the JD79668 look like the same chip with a different geometry.
+They are not, and the resemblance is the trap:
+
+| | JD79668 (wHAT 4.2") | JD79661 (pHAT 2.13") |
+|---|---|---|
+| Init commands | 11 | 15 |
+| Only in this one | `0xAE 0xB0 0xBD 0xBE` | `PWR POFS TCON PWS 0xE7 0xB6 0xB4` |
+| `BTST_P` payload | `0D 12 24 25 12 29 10` | `0F 0A 2F 25 22 2E 21` |
+| `TRES` | the panel's geometry, 400x300 | the **controller's**, 128x250 |
+| Frame layout | row-major | rotated a quarter turn, padded |
+| Frame size | 30,000 B | 8,000 B |
+| Refresh, measured | 20.5 s | **18.5 s** |
+
+The refresh sequence (`DTM PON wait DRF wait POF wait DSLP`) and the palette
+order (black, white, yellow, red) are identical in both. So is the pin map, and
+so is the 30 ms/30 ms reset pulse.
+
+`driver/jd79661.TestInitIsNotTheJD79668Sequence` exists to stop a future
+tidy-up from merging the two: it asserts, in both directions, that each driver
+sends the registers the other does not.
+
+### 13.2 Working out the frame layout
+
+This is the part that cannot be read off the vendor source. `Inky.show()` in
+`inky_jd79661.py` is:
+
+```python
+region = numpy.vstack((self.overscan, self.buf))   # (6,250) on top of (122,250)
+region = numpy.rot90(region, -1)                   # -> (250,128)
+buf = region.flatten()
+buf = ((buf[::4] & 3) << 6) | ((buf[1::4] & 3) << 4) | ((buf[2::4] & 3) << 2) | (buf[3::4] & 3)
+```
+
+Worked out index by index. `numpy.rot90(m, -1)` on an `(M,N)` array gives an
+`(N,M)` array with `result[i][j] = m[M-1-j][i]`. With `M=128`, `N=250`, and
+`region[r]` being image row `r-6` for `r >= 6`:
+
+```
+stream index n = cy*128 + cx
+controller (cx, cy)  <-  image (x = cy, y = H-1-cx),  black when cx >= H
+```
+
+So the controller's frame is portrait 128x250, the image's left edge becomes
+the controller's first row, and the six rows of overscan land at `cx` 122..127
+— the far end of the fast axis, addressing no glass. `TRES` is told 128x250,
+not 250x122, which is why the vendor's hardcoded `0x00,0x80,0x00,0xFA` looks
+nothing like the panel's size.
+
+That derivation was checked against numpy before a line of Go was written, and
+is now pinned by `testdata/frame/jd79661-frame.{idx,bin}` — a matched pair
+captured from the **real vendor library on the Pi with the panel attached**.
+`TestFrameMatchesTheVendorOracle` asserts our 8,000 bytes are byte-identical to
+Pimoroni's. They are.
+
+### 13.3 What "rotates" means for everything above the driver
+
+Nothing. `Bounds()` is 250x122 landscape and the rotation is entirely inside
+`Device.Show`. That is the point of the split — but it is also a failure mode
+no byte-level test can see, because a sign error there produces a picture that
+is complete, correctly coloured, and upside down.
+
+Hence `testcard.DrawOrientation`: a card with four differently-inked corners and
+an arrow, drawn from the canvas's own bounds so it works on any panel.
+Verified on the glass on 2026-09-16 — red square top-left, yellow top-right,
+black-with-a-hole bottom-left, checker bottom-right, arrow pointing top-left.
+
+### 13.4 The test card had to learn to scale
+
+The card was laid out for 400x300 in absolute pixels. At 250x122 it did not
+clip tidily, it scrambled: the central disc fell off the bottom, the luminance
+ladders inverted because their bottom margin passed their top one, and the
+model name ran out through the side of the disc.
+
+Every dimension is now a ratio against the reference geometry
+(`testcard/geometry.go`), written so that at exactly 400x300 the arithmetic is
+the identity — the reviewed 400x300 golden passes **unchanged**, which is the
+proof that nothing moved.
+
+What deliberately does not scale: the dither matrix, the 1px checkers, the
+grating pitches, the 1px strokes and the font sizes. Those are measurements of
+the panel, and they mean the same thing at every size. A 3px grating shrunk to
+1px would not be a smaller version of the same test.
+
+Two things fell out of it:
+
+- **13px is the floor.** The bundled bitmap faces have a minimum line height of
+  about 13px, so a box shorter than that holds no text at any size. Near the
+  top of a 62px disc the inscribed width is about 30px, which fits no heading —
+  so on the pHAT the card has no title. `render.FittedSize` was added so the
+  card can ask whether text fits instead of `TextFitted` failing and poisoning
+  the canvas.
+- **Words have to break.** "Red/Yellow" alone is wider than the pHAT's disc.
+  Breaking mid-word is ugly; the alternatives are dropping the line, which
+  loses the identity of the run, and shrinking the text, which cannot work
+  below 13px.
+
+The containment check now runs at every supported size
+(`TestCircleContentStaysInsideEverySupportedPanel`). It only ran at 400x300
+before, which is exactly why the overflow was invisible.
+
+### 13.5 Portrait, and why the card is tested at it
+
+Asked after the fact: is there value in a portrait test card? Yes, and it found
+a live bug rather than a hypothetical one.
+
+The derived layout quietly assumed the panel is wider than it is tall — the
+disc's radius comes from the height, its centre from the width. At 122x250 the
+disc spanned x `-4..126` on a 122px panel, cut off flat against both edges; and
+the castellated border, scaled from the height, grew until it overlapped the
+step wedges on a tall narrow panel.
+
+No supported panel is portrait, so neither is reachable through `inky.Open`.
+Both are reachable through `epaper-testcard -size 122x250`, which exists so an
+unsold geometry can be looked at before anyone writes a driver for it. A
+diagnostic card that is itself clipped is worse than useless for that job.
+
+Two fixes, both no-ops on the real panels:
+
+- The disc's radius is clamped by what the step wedges leave free. Overlap is
+  not a lesser failure than clipping — a wedge hidden under the disc measures
+  nothing, and on a narrow panel a smaller disc is the only degradation that
+  keeps every element visible.
+- The border and castellation scale with the *smaller* axis. They are insets
+  from all four edges, so following the height alone was wrong in a way that
+  only showed up when the height was the larger axis.
+
+`TestLayoutIsUnchangedOnTheRealPanels` pins the layout numerically at both real
+geometries, so a future clamp cannot quietly reshape a shipping panel's card;
+`TestLayoutHoldsAtEveryAspectRatio` checks containment and non-overlap across
+landscape, portrait, square and two extremes.
+
+**This is not portrait support.** Presenting a panel in portrait means
+rotation, which is still §9.9 and still deferred: `Bounds()` is the panel's
+native landscape, and `Show` rejects a transposed image with `ErrWrongSize`
+before it reaches the hardware. What is now true is that *if* rotation ever
+lands, the card will not be the thing that breaks — and in the meantime the
+`-size` flag does not lie about geometries nobody has built yet.
+
+The portrait card was drawn on the real pHAT on 2026-09-16, via
+`examples/portrait`, which rotates the content into the panel's own frame. So
+the layout above is verified on glass and not only in a PNG.
+
+### 13.6 Knowing what is supported
+
+`inky.SupportedPanels()` reports the boards that have drivers. It is checked
+against the dispatch in both directions, and against the captured EEPROMs, so
+it cannot drift. Everything that needs to cover "every resolution" is driven
+from it rather than from a second list: the test card goldens, the command's
+`-size all`, and the dashboard example's own tests.
+
+That is what makes CI cover the panels. `make report` and the CI artifact
+render every golden in `testdata/golden`, and the goldens are generated per
+supported panel — so adding a driver adds its renders to the report without
+anyone remembering to.
+
+### 13.7 The Pi
+
+A Pi Zero 2 W, 64-bit, 415 MB RAM, on the bench LAN. Addressed by `HOST` like
+the other one — §11.1's note applies, the host is described here rather than
+named. It arrived with SPI and I2C both disabled. What was changed:
+
+```
+# /boot/firmware/config.txt  (backup at config.txt.bak-epaper)
+dtparam=i2c_arm=on
+dtparam=spi=on
+dtoverlay=spi0-0cs     # leaves GPIO 8 free for the driver's own chip select
+
+# /etc/modules-load.d/epaper-i2c.conf
+i2c-dev                # /dev/i2c-1 needs this; the bus driver alone is not enough
+```
+
+`i2c-dev` is the one that is easy to miss: `dtparam=i2c_arm=on` loads
+`i2c_bcm2835` and creates no device node, which reads as a seating fault.
+
+The reference venv was rebuilt there to capture the frame fixture, pinned as
+§11.3 requires (`inky==2.5.0`, `pillow==12.3.0`, `numpy==2.5.3`). It needs
+`python3-dev` first — `spidev` has no aarch64 wheel and builds from source.
+Tear it down again when it is no longer needed; the library never depends on it.

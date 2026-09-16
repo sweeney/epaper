@@ -31,8 +31,14 @@ run in CI:
 
 ```bash
 make test-hw HOST=user@your-pi
-make testcard HOST=user@your-pi    # draws on the panel, ~20 s
+make testcard HOST=user@your-pi                      # draws on the panel, ~20 s
+make testcard HOST=user@your-pi PATTERN=orientation  # which way up is it?
 ```
+
+Off the panel, `make testcard-png` renders the card at **every** supported
+resolution, and `make panels` lists them. Use it: the card is laid out from the
+panel's size, so "it looks right" is a claim about one geometry until you have
+looked at the others.
 
 `go test -c` compiles one package, which is why every hardware test is in
 `hwtest` rather than beside the code it exercises.
@@ -66,7 +72,7 @@ Three habits that have already paid for themselves:
 
 `testdata/` was captured from real hardware. If your code disagrees with a
 fixture, your code is wrong — go and read `testdata/README.md` before changing
-one. The exception is §5 of that file: if a fixture and the hardware ever
+one. The exception is §6 of that file: if a fixture and the hardware ever
 genuinely disagree, trust the hardware, re-capture, and write down what
 changed.
 
@@ -98,14 +104,64 @@ byte sequence against a fake `Conn`, the way
 a blank panel and a very bad afternoon, 20 seconds at a time; in a test it is
 microseconds.
 
-**3. Add one case to `inky.OpenWith`,** mapping the EEPROM's display variant
-to your driver. If your board is not a Pimoroni one, write a sibling of the
-`inky` package instead — it is about 200 lines, most of it the EEPROM layout.
+**3. Pin the frame layout against the vendor, not against your reading of it.**
+If the controller does anything other than send the buffer row-major — the
+JD79661 pads one axis and rotates a quarter turn — then the layout is the one
+part you cannot check by eye, and a sign error there draws a complete,
+correctly coloured, upside-down picture. Capture a matched pair of
+indices-in/bytes-out from the real vendor library, the way
+`tools/frame_jd79661.py` does, and assert byte equality. `PLAN.md` §13.2 is a
+worked example.
 
-**4. If it needs more than that, abstract then — not now.** There is
-deliberately no driver registry and no capability negotiation. With two real
-implementations in hand there is something to abstract *from*; with one there
-is only guesswork.
+**4. Add one case to `driverFor` in `inky.OpenWith`,** mapping the EEPROM's
+display variant to your driver, **and one entry to `inky.SupportedPanels()`**.
+A test checks the two against each other in both directions, and checks the
+geometry against the captured EEPROMs, so they cannot drift. Everything that
+has to cover "every panel" is driven from that list rather than from a second
+copy — the test card goldens, `-size all`, the examples' tests — so this is
+what puts your panel in CI's report. If your board is not a Pimoroni one, write
+a sibling of the `inky` package instead — it is about 200 lines, most of it the
+EEPROM layout.
+
+**5. Draw the orientation card on it.** `make testcard HOST=... PATTERN=orientation`.
+Four differently-inked corners and an arrow, so all eight ways of being wrong
+look different. This is the only check that catches a rotation or a flip, and
+it costs one refresh.
+
+**6. If it needs more than that, abstract then — not now.** There is
+deliberately no driver registry and no capability negotiation. Two controllers
+in, the only thing that has been worth abstracting is the supported-panel list,
+and that was because three separate places needed to iterate it.
+
+### What the second controller actually cost
+
+Worth reading before assuming the next one is a parameter change. The JD79661
+and the JD79668 share a command vocabulary, a refresh sequence, a pin map, a
+palette and a reset pulse. They differ in their init registers, in what `TRES`
+is told, and in their frame layout — and the EEPROM's display-variant byte is
+the *only* thing that distinguishes the boards. Everything else about them,
+including the colour string and the PCB revision, is identical.
+
+`driver/jd79661.TestInitIsNotTheJD79668Sequence` exists to stop a future
+tidy-up from merging them. Do not delete it.
+
+## Orientation
+
+There is no rotation in this library, on purpose — `PLAN.md` §9.9. Before
+adding one, read that section: the question is not whether rotation is useful
+but *where the knowledge of "which way up" belongs*, and there is a real
+argument for putting it in the driver, because the JD79661's controller frame
+is natively portrait and the driver already rotates it to present landscape.
+
+Meanwhile `examples/portrait` is the recipe, and its tests are the thing to
+copy if you touch any rotation anywhere: pinned by corner, plus
+four-quarter-turns-is-the-identity. Every wrong rotation looks entirely
+plausible — a mirror, an anticlockwise turn and a 180 all produce a complete,
+correctly coloured picture — so "it drew something" proves nothing. All four
+variants are caught by those two tests.
+
+And the sentence everyone gets backwards: **the content rotates clockwise, so
+the panel turns anticlockwise.**
 
 ## Adding text
 

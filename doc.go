@@ -80,4 +80,12 @@
 // outline font cannot render legibly on a panel with no intermediate tones, and
 // no amount of tuning fixes it. Use a bitmap font. [render.FontFamily] explains
 // why, and testcard.Fonts is one that needs no font file.
+//
+// # Orientation
+//
+// A device reports its panel's native geometry, which for every panel this
+// library drives is landscape, and [Device.Show] rejects an image of any other
+// shape with [ErrWrongSize]. There is no rotation here — see PLAN.md §9.9 for
+// why that is a decision rather than an omission, and examples/portrait for the
+// eight lines that mount a panel on its end.
 package epaper
