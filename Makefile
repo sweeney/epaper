@@ -3,7 +3,11 @@
 # Note for any recipe that shells into the Pi: /usr/sbin is NOT on PATH over
 # non-interactive ssh. i2cdetect and friends must be called by absolute path.
 
-HOST    ?= sweeney@192.168.1.6
+# The Pi to talk to, e.g. HOST=pi@raspberrypi.local. There is deliberately no real
+# default: there is more than one panel now, so any default would be the wrong
+# Pi half the time, and a bench address is not something a public repo should
+# carry. require-host below turns a missing one into advice.
+HOST    ?= user@your-pi
 PKGS    := ./...
 REMOTE  := /tmp/epaper-hwtest
 
@@ -116,25 +120,69 @@ check: tidy lint test build
 # `go test -c` compiles ONE package, which is why every hardware test lives in
 # ./hwtest rather than beside the code it exercises.
 .PHONY: test-hw
-test-hw:
+test-hw: require-host
 	GOOS=linux GOARCH=arm64 go test -c -tags hardware -o $(REMOTE:%=%.bin) ./hwtest
 	scp -q $(REMOTE:%=%.bin) $(HOST):$(REMOTE)
 	ssh $(HOST) '$(REMOTE) -test.v; rc=$$?; rm -f $(REMOTE); exit $$rc'
 	@rm -f $(REMOTE:%=%.bin)
 
-## testcard: draw the test card on the real panel — ~20 s of refresh
+## testcard: draw a pattern on the real panel — ~20 s of refresh
+#
+# PATTERN selects what to draw: testcard, orientation or conformance. The
+# geometry is NOT a variable here — on real hardware the panel's EEPROM decides
+# it, and overriding it would draw something the panel cannot show. Use
+# testcard-png for other geometries.
+#
+#   make testcard HOST=sweeney@pi
+#   make testcard HOST=sweeney@pi PATTERN=orientation
+PATTERN ?= testcard
+
 .PHONY: testcard
-testcard:
+testcard: require-host
 	GOOS=linux GOARCH=arm64 go build -o /tmp/epaper-testcard ./cmd/epaper-testcard
 	scp -q /tmp/epaper-testcard $(HOST):/tmp/epaper-testcard
-	ssh $(HOST) '/tmp/epaper-testcard; rc=$$?; rm -f /tmp/epaper-testcard; exit $$rc'
+	ssh $(HOST) '/tmp/epaper-testcard -pattern $(PATTERN); rc=$$?; rm -f /tmp/epaper-testcard; exit $$rc'
 	@rm -f /tmp/epaper-testcard
+
+## testcard-png: render the card at every supported resolution, no hardware
+#
+# SIZE picks one: a WxH, a model substring, a controller name, or "all"
+# (the default). A size nobody sells is allowed — the point is to see what the
+# layout does before a driver exists for it.
+#
+#   make testcard-png                      # every supported panel
+#   make testcard-png SIZE=250x122
+#   make testcard-png SIZE=pHAT PATTERN=orientation
+#
+# The card is laid out FROM the panel's size, so "it looks right" is a claim
+# about one geometry until it has been looked at on the others. It was
+# scrambled at 250x122 for as long as nobody had rendered it there.
+SIZE    ?= all
+PNGDIR  ?= render-out
+
+.PHONY: testcard-png
+testcard-png:
+	@go run ./cmd/epaper-testcard -png $(PNGDIR)/$(PATTERN).png -size '$(SIZE)'
+	@echo "look at them: $(PNGDIR)/"
+
+## panels: list the panels this library supports
+.PHONY: panels
+panels:
+	@go run ./cmd/epaper-testcard -list
+
+# Fail with advice rather than an opaque ssh error when HOST is still the
+# placeholder.
+.PHONY: require-host
+require-host:
+	@test "$(HOST)" != "user@your-pi" || { \
+		echo "set HOST to your Pi, e.g. make $(MAKECMDGOALS) HOST=pi@raspberrypi.local"; \
+		exit 1; }
 
 ## clean: remove build, coverage and tool output
 .PHONY: clean
 clean:
 	rm -f coverage.out coverage.html test-report.html test.json
-	rm -rf $(TOOLS_DIR)
+	rm -rf $(TOOLS_DIR) $(PNGDIR)
 	go clean -testcache
 
 ## help: list targets

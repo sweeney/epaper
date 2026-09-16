@@ -22,3 +22,7 @@ test.json
 
 # Locally installed dev tools
 /.tools/
+
+# Local renders from "make testcard-png". The reviewed ones live in
+# testdata/golden, which CI renders into the report.
+render-out/
