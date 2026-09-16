@@ -210,6 +210,7 @@ func assertNothingEscapesTheCircle(t *testing.T, got *image.Paletted) {
 		t.Fatalf("Err(): %v", err)
 	}
 
+	l := newLayout(400, 300)
 	var escaped []image.Point
 	changed := 0
 	for y := range 300 {
@@ -218,8 +219,8 @@ func assertNothingEscapesTheCircle(t *testing.T, got *image.Paletted) {
 				continue
 			}
 			changed++
-			dx, dy := x-circleX, y-circleY
-			if dx*dx+dy*dy > circleR*circleR {
+			dx, dy := x-l.circleX, y-l.circleY
+			if dx*dx+dy*dy > l.circleR*l.circleR {
 				escaped = append(escaped, image.Pt(x, y))
 			}
 		}
@@ -242,14 +243,15 @@ func TestCircleContentStaysInsideTheCircle(t *testing.T) {
 // wrapToCircle is the part of the layout most likely to go wrong quietly.
 func TestWrapToCircle(t *testing.T) {
 	f, _ := Fonts()(13)
-	lines := wrapToCircle("Red/Yellow wHAT (JD79668)", f, circleY-40, render.LineHeight(f))
+	l := newLayout(400, 300)
+	lines := wrapToCircle(l, "Red/Yellow wHAT (JD79668)", f, l.circleY-40, render.LineHeight(f))
 	if len(lines) < 2 {
 		t.Errorf("wrapToCircle() = %q, want it split over more than one line", lines)
 	}
 	if joined := strings.Join(lines, " "); joined != "Red/Yellow wHAT (JD79668)" {
 		t.Errorf("wrapping lost or reordered words: %q", joined)
 	}
-	if got := wrapToCircle("", f, circleY, 13); got != nil {
+	if got := wrapToCircle(l, "", f, l.circleY, 13); got != nil {
 		t.Errorf("wrapToCircle(\"\") = %q, want nil", got)
 	}
 }

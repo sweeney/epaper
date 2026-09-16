@@ -10,11 +10,14 @@
 // ladders down both sides, frequency gratings in the corners, step wedges, a
 // crosshair and a central circle. Those are the parts that measure something.
 //
+// The layout scales to the panel; see geometry.go for what that does and does
+// not move.
+//
 // It does NOT reproduce the card's picture — the girl, the blackboard, the
 // clown. Those need arcs and pie slices, which [render.Canvas] deliberately
 // does not offer, and they test nothing that the diagnostic elements do not
 // already cover. The central circle carries a legibility ladder and a pixel
-// grid instead, which are more useful on a 400x300 panel than a drawing is.
+// grid instead, which are more useful on a small panel than a drawing is.
 //
 // # No greys, no cyan, no green
 //
@@ -39,18 +42,6 @@ import (
 
 	"github.com/sweeney/epaper"
 	"github.com/sweeney/epaper/render"
-)
-
-// Layout constants. The card is designed for 400x300 and scales nothing; a
-// different panel gets the same elements in the same places, clipped.
-const (
-	border = 12 // castellation thickness
-	castle = 25 // castellation block pitch
-
-	// The central disc.
-	circleR = 78 // ~52% of the panel height, as the original
-	circleX = 200
-	circleY = 148
 )
 
 // DefaultTitle is the heading drawn in the circle when [Options.Title] is
@@ -114,8 +105,16 @@ func Show(ctx context.Context, d epaper.Device, lines ...string) error {
 
 // Draw paints the test card into a canvas.
 //
-// It is designed for 400x300 and scales nothing: a larger panel gets the same
-// elements in the same places, and a smaller one gets them clipped.
+// The layout is derived from the canvas's own bounds, so the card fills
+// whatever panel it is given: a 250x122 pHAT gets the same elements as a
+// 400x300 wHAT, proportionally placed, in a smaller frame. See geometry.go for
+// what scales and what deliberately does not — the dither, the 1px checkers,
+// the grating pitches and the font sizes are measurements of the panel, and
+// they mean the same thing at every size.
+//
+// Very small panels lose whatever will not fit rather than drawing it on top
+// of something else: elements that would invert are skipped, and the text
+// inside the disc stops at its outline.
 func Draw(c *render.Canvas, opts Options) {
 	fonts := opts.Fonts
 	if fonts == nil {
@@ -130,18 +129,18 @@ func Draw(c *render.Canvas, opts Options) {
 	}
 
 	b := c.Bounds()
-	w, h := b.Dx(), b.Dy()
+	l := newLayout(b.Dx(), b.Dy())
 
 	// The field: 50% Bayer, which is the "grey" the original card sits on.
 	c.Dither(b, epaper.Black, epaper.White, 0.5)
 
-	drawCastellation(c, w, h)
-	drawLadders(c, w, h)
-	drawGratings(c, w, h)
-	drawReferencePatch(c, w)
-	drawWedges(c, w)
-	drawCrosshair(c, w, h)
-	drawCircle(c, fonts, title, opts.Lines)
+	drawCastellation(c, l)
+	drawLadders(c, l)
+	drawGratings(c, l)
+	drawReferencePatch(c, l)
+	drawWedges(c, l)
+	drawCrosshair(c, l)
+	drawCircle(c, l, fonts, title, opts.Lines)
 }
 
 // drawWithoutCircle paints everything except the central disc and its
@@ -149,12 +148,12 @@ func Draw(c *render.Canvas, opts Options) {
 // the circle escapes it.
 func drawWithoutCircle(c *render.Canvas) {
 	b := c.Bounds()
-	w, h := b.Dx(), b.Dy()
+	l := newLayout(b.Dx(), b.Dy())
 	c.Dither(b, epaper.Black, epaper.White, 0.5)
-	drawCastellation(c, w, h)
-	drawLadders(c, w, h)
-	drawGratings(c, w, h)
-	drawReferencePatch(c, w)
-	drawWedges(c, w)
-	drawCrosshair(c, w, h)
+	drawCastellation(c, l)
+	drawLadders(c, l)
+	drawGratings(c, l)
+	drawReferencePatch(c, l)
+	drawWedges(c, l)
+	drawCrosshair(c, l)
 }
