@@ -8,7 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"os"
+	"path/filepath"
+	"reflect"
+
 	"github.com/sweeney/epaper"
+	"github.com/sweeney/epaper/driver/jd79661"
+	"github.com/sweeney/epaper/driver/jd79668"
 	"github.com/sweeney/epaper/internal/gpiocdev"
 	"github.com/sweeney/epaper/internal/spidev"
 )
@@ -287,5 +293,226 @@ func TestDeviceCloseReleasesTransports(t *testing.T) {
 	defer cancel()
 	if err := dev.Show(ctx, dev.NewImage()); !errors.Is(err, epaper.ErrClosed) {
 		t.Errorf("Show() after Close = %v, want ErrClosed", err)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Two panels, two controllers
+// --------------------------------------------------------------------------
+
+// realPHat is our Inky pHAT 2.13"'s EEPROM record, decoded. Captured from the
+// board on 2026-09-16; the bytes are testdata/eeprom/phat-jd79661.bin.
+func realPHat() *EEPROM {
+	return &EEPROM{
+		Width: 250, Height: 122,
+		Colour: "red/yellow", PCBVariant: 100,
+		DisplayVariant: variantRedYellowPHatJD79661,
+		Model:          "Red/Yellow pHAT (JD79661)",
+		WriteTime:      "2026-04-15 23:32:34.2",
+	}
+}
+
+// The EEPROM picks the controller driver. Both boards are "red/yellow" with
+// the same pin map and the same palette, so nothing downstream of here can
+// tell them apart — if the dispatch is wrong, the symptom is a panel that
+// stays blank, not an error.
+func TestOpenWithDispatchesOnTheDisplayVariant(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		info   *EEPROM
+		bounds image.Rectangle
+		driver any
+	}{
+		{"wHAT 4.2", realBoard(), image.Rect(0, 0, 400, 300), (*jd79668.Device)(nil)},
+		{"pHAT 2.13", realPHat(), image.Rect(0, 0, 250, 122), (*jd79661.Device)(nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubTransports(t, tc.info, nil)
+
+			dev, err := OpenWith(Options{})
+			if err != nil {
+				t.Fatalf("OpenWith(): %v", err)
+			}
+			defer dev.Close()
+
+			if got, want := reflect.TypeOf(dev), reflect.TypeOf(tc.driver); got != want {
+				t.Errorf("OpenWith() returned %v, want %v", got, want)
+			}
+			if got := dev.Bounds(); got != tc.bounds {
+				t.Errorf("Bounds() = %v, want %v", got, tc.bounds)
+			}
+			if got := dev.Model(); got != tc.info.Model {
+				t.Errorf("Model() = %q, want the EEPROM's name", got)
+			}
+			for _, ink := range []epaper.Ink{epaper.Black, epaper.White, epaper.Yellow, epaper.Red} {
+				if !dev.Palette().Has(ink) {
+					t.Errorf("palette has no %s", ink)
+				}
+			}
+		})
+	}
+}
+
+// The pHAT is landscape: 250 wide by 122 tall. Its controller wants the frame
+// the other way up, and that rotation is the driver's business — a caller that
+// sees 122x250 here would draw everything sideways.
+func TestOpenWithPresentsThePHatAsLandscape(t *testing.T) {
+	stubTransports(t, realPHat(), nil)
+
+	dev, err := OpenWith(Options{})
+	if err != nil {
+		t.Fatalf("OpenWith(): %v", err)
+	}
+	defer dev.Close()
+
+	b := dev.Bounds()
+	if b.Dx() <= b.Dy() {
+		t.Errorf("Bounds() = %v, want landscape — the rotation belongs in the driver", b)
+	}
+	if img := dev.NewImage(); img.Bounds() != b {
+		t.Errorf("NewImage() bounds = %v, want %v", img.Bounds(), b)
+	}
+}
+
+// Options reach whichever driver was chosen, not just the first one.
+//
+// BusyTimeout is the one with a cheap observable: against a fake bus that
+// never reports ready, a driver that got the option gives up when told to, and
+// one that did not sits on the 40 s default.
+func TestOpenWithPassesOptionsToThePHatDriver(t *testing.T) {
+	o := stubTransports(t, realPHat(), nil)
+	o.bus.busy = []int{busyBusy} // never reports ready
+
+	dev, err := OpenWith(Options{BusyTimeout: 50 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("OpenWith(): %v", err)
+	}
+	defer dev.Close()
+
+	started := time.Now()
+	err = dev.Show(context.Background(), dev.NewImage())
+	if err == nil {
+		t.Fatal("Show() = nil against a fake bus that never reports ready")
+	}
+	if !errors.Is(err, ErrBusyTimeout) {
+		t.Errorf("Show() = %v, want ErrBusyTimeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Errorf("Show() took %s to give up; the BusyTimeout option did not reach the driver", elapsed)
+	}
+}
+
+// The whole path, from the bytes actually on the boards to the driver that
+// ends up handling them: fixture -> ParseEEPROM -> driverFor -> Device.
+//
+// The pieces are each tested above, but only against each other. This is the
+// one test where the display-variant numbers are pinned to something outside
+// the source — captured EEPROM images — so that renumbering a constant cannot
+// quietly agree with itself.
+func TestTheRealBoardsReachTheRightDrivers(t *testing.T) {
+	for _, tc := range []struct {
+		fixture string
+		driver  any
+		bounds  image.Rectangle
+	}{
+		{"what-jd79668.bin", (*jd79668.Device)(nil), image.Rect(0, 0, 400, 300)},
+		{"phat-jd79661.bin", (*jd79661.Device)(nil), image.Rect(0, 0, 250, 122)},
+	} {
+		t.Run(tc.fixture, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "testdata", "eeprom", tc.fixture))
+			if err != nil {
+				t.Fatalf("reading fixture: %v", err)
+			}
+			info, err := ParseEEPROM(raw)
+			if err != nil {
+				t.Fatalf("ParseEEPROM(): %v", err)
+			}
+			stubTransports(t, info, nil)
+
+			dev, err := OpenWith(Options{})
+			if err != nil {
+				t.Fatalf("OpenWith(): %v", err)
+			}
+			defer dev.Close()
+
+			if got, want := reflect.TypeOf(dev), reflect.TypeOf(tc.driver); got != want {
+				t.Errorf("display variant %d got %v, want %v", info.DisplayVariant, got, want)
+			}
+			if got := dev.Bounds(); got != tc.bounds {
+				t.Errorf("Bounds() = %v, want %v", got, tc.bounds)
+			}
+		})
+	}
+}
+
+// SupportedPanels and the dispatch must agree. They are two lists of the same
+// thing, which is exactly the shape that drifts: a driver added to one and not
+// the other gives a panel that opens but cannot be previewed, or one that is
+// advertised and then refused.
+func TestSupportedPanelsMatchesTheDispatch(t *testing.T) {
+	listed := map[uint8]Panel{}
+	for _, p := range SupportedPanels() {
+		if _, dup := listed[p.DisplayVariant]; dup {
+			t.Errorf("display variant %d is listed twice", p.DisplayVariant)
+		}
+		listed[p.DisplayVariant] = p
+	}
+
+	// Everything listed must have a driver...
+	for v, p := range listed {
+		if _, ok := driverFor(v); !ok {
+			t.Errorf("SupportedPanels lists %q (variant %d) but OpenWith has no driver for it", p.Model, v)
+		}
+		if p.Model == "" || p.Controller == "" {
+			t.Errorf("variant %d is listed with an empty model or controller: %+v", v, p)
+		}
+		if p.Width <= 0 || p.Height <= 0 {
+			t.Errorf("%q is listed as %dx%d", p.Model, p.Width, p.Height)
+		}
+		// The name must be the vendor's, not one invented here.
+		if int(v) >= len(displayVariants) || displayVariants[v] != p.Model {
+			t.Errorf("variant %d is listed as %q but the vendor table says %q",
+				v, p.Model, displayVariants[v])
+		}
+	}
+
+	// ...and every driver must be listed. Sweeping the whole byte range is
+	// cheap and needs no second copy of the variant numbers.
+	for v := 0; v < 256; v++ {
+		if _, ok := driverFor(uint8(v)); !ok {
+			continue
+		}
+		if _, listed := listed[uint8(v)]; !listed {
+			t.Errorf("OpenWith drives variant %d but SupportedPanels does not list it", v)
+		}
+	}
+}
+
+// The nominal geometry has to match what the real boards report, or a preview
+// rendered from SupportedPanels is not a preview of anything.
+func TestSupportedPanelGeometryMatchesTheRealEEPROMs(t *testing.T) {
+	for _, f := range []string{"what-jd79668.bin", "phat-jd79661.bin"} {
+		raw, err := os.ReadFile(filepath.Join("..", "testdata", "eeprom", f))
+		if err != nil {
+			t.Fatalf("reading fixture: %v", err)
+		}
+		info, err := ParseEEPROM(raw)
+		if err != nil {
+			t.Fatalf("ParseEEPROM(%s): %v", f, err)
+		}
+		var found bool
+		for _, p := range SupportedPanels() {
+			if p.DisplayVariant != info.DisplayVariant {
+				continue
+			}
+			found = true
+			if p.Width != info.Width || p.Height != info.Height {
+				t.Errorf("%s: listed as %dx%d, the board reports %dx%d",
+					p.Model, p.Width, p.Height, info.Width, info.Height)
+			}
+		}
+		if !found {
+			t.Errorf("%s: variant %d is not in SupportedPanels", f, info.DisplayVariant)
+		}
 	}
 }

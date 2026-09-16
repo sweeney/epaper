@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sweeney/epaper"
+	"github.com/sweeney/epaper/driver/jd79661"
 	"github.com/sweeney/epaper/driver/jd79668"
 	"github.com/sweeney/epaper/internal/gpiocdev"
 	"github.com/sweeney/epaper/internal/i2c"
@@ -139,9 +140,12 @@ func OpenWith(opts Options) (epaper.Device, error) {
 		return nil, err
 	}
 
-	// Only one controller so far. Adding another means a new driver package
-	// and one more case here — see CONTRIBUTING.md.
-	if info.DisplayVariant != variantRedYellowWhatJD79668 {
+	// Which driver, decided before anything is claimed: refusing a panel
+	// after taking the GPIO lines would leave them held until the process
+	// exits. Adding a controller means a new driver package and one more
+	// case in newDriver — see CONTRIBUTING.md.
+	build, ok := driverFor(info.DisplayVariant)
+	if !ok {
 		return nil, fmt.Errorf("inky: %q (display variant %d) is not one this library drives yet: %w",
 			info.Model, info.DisplayVariant, ErrUnsupportedPanel)
 	}
@@ -170,18 +174,92 @@ func OpenWith(opts Options) (epaper.Device, error) {
 	}
 
 	c := &conn{spi: spi, gpio: lines, pins: pins}
-	dev, err := jd79668.New(c, jd79668.Config{
-		Width:        info.Width,
-		Height:       info.Height,
-		Model:        info.Model,
-		CommandDelay: opts.CommandDelay,
-		BusyTimeout:  opts.BusyTimeout,
-	})
+	dev, err := build(c, info, opts)
 	if err != nil {
 		_ = c.Close()
 		return nil, fmt.Errorf("inky: %w", err)
 	}
 	return dev, nil
+}
+
+// Panel is a board this library can drive.
+//
+// It is what [SupportedPanels] reports. The geometry is nominal — at runtime
+// the EEPROM is authoritative and is what reaches the driver — but it is
+// enough to render a preview, or a test card, for a panel nobody has plugged
+// in. That is what the test card's goldens use it for, so adding a driver adds
+// its renders to CI without anyone remembering to.
+type Panel struct {
+	// DisplayVariant is the EEPROM byte that identifies this board.
+	DisplayVariant uint8
+
+	// Model is the vendor's name for it, as the EEPROM reports it.
+	Model string
+
+	// Controller names the chip behind the glass, which is what actually
+	// determines the driver. Two boards with the same controller share one.
+	Controller string
+
+	// Width and Height are the panel's nominal geometry in pixels, in the
+	// orientation the picture is drawn in.
+	Width, Height int
+}
+
+// SupportedPanels returns every board this library has a driver for.
+//
+// Ordered by display variant, so the output is stable. The list and the
+// dispatch in [OpenWith] are checked against each other by a test: a driver
+// added to one and not the other is a panel that either cannot be opened or
+// cannot be previewed.
+func SupportedPanels() []Panel {
+	return []Panel{
+		{
+			DisplayVariant: variantRedYellowPHatJD79661,
+			Model:          displayVariants[variantRedYellowPHatJD79661],
+			Controller:     "JD79661",
+			Width:          250, Height: 122,
+		},
+		{
+			DisplayVariant: variantRedYellowWhatJD79668,
+			Model:          displayVariants[variantRedYellowWhatJD79668],
+			Controller:     "JD79668",
+			Width:          400, Height: 300,
+		},
+	}
+}
+
+// driverFor maps an EEPROM display variant to the driver that handles it.
+//
+// The two Pimoroni four-ink boards look identical from up here — both are
+// "red/yellow", both use the same pins, both have the same palette in the same
+// order — and they carry different controllers with different init sequences
+// and different frame layouts. Nothing downstream can tell them apart, so if
+// this picks wrong the symptom is a panel that stays blank rather than an
+// error. That is why the dispatch is on the variant byte and nothing else.
+func driverFor(variant uint8) (func(*conn, *EEPROM, Options) (epaper.Device, error), bool) {
+	switch variant {
+	case variantRedYellowPHatJD79661:
+		return func(c *conn, info *EEPROM, opts Options) (epaper.Device, error) {
+			return jd79661.New(c, jd79661.Config{
+				Width:        info.Width,
+				Height:       info.Height,
+				Model:        info.Model,
+				CommandDelay: opts.CommandDelay,
+				BusyTimeout:  opts.BusyTimeout,
+			})
+		}, true
+	case variantRedYellowWhatJD79668:
+		return func(c *conn, info *EEPROM, opts Options) (epaper.Device, error) {
+			return jd79668.New(c, jd79668.Config{
+				Width:        info.Width,
+				Height:       info.Height,
+				Model:        info.Model,
+				CommandDelay: opts.CommandDelay,
+				BusyTimeout:  opts.BusyTimeout,
+			})
+		}, true
+	}
+	return nil, false
 }
 
 // Identify reads and decodes the HAT's identification EEPROM.
@@ -204,8 +282,14 @@ func Identify(i2cPath string) (*EEPROM, error) {
 	return ParseEEPROM(raw)
 }
 
-// variantRedYellowWhatJD79668 is the only display variant with a driver.
-const variantRedYellowWhatJD79668 = 24
+// The display variants this library has drivers for, from the vendor's table
+// in eeprom.go. Both boards are four-ink red/yellow panels; they differ in the
+// controller behind the glass, which is the whole reason there are two
+// drivers.
+const (
+	variantRedYellowPHatJD79661 = 23 // Inky pHAT 2.13", 250x122
+	variantRedYellowWhatJD79668 = 24 // Inky wHAT 4.2",  400x300
+)
 
 // gpioError turns a line-request failure into advice.
 //
