@@ -1379,4 +1379,13 @@ i2c-dev                # /dev/i2c-1 needs this; the bus driver alone is not enou
 The reference venv was rebuilt there to capture the frame fixture, pinned as
 §11.3 requires (`inky==2.5.0`, `pillow==12.3.0`, `numpy==2.5.3`). It needs
 `python3-dev` first — `spidev` has no aarch64 wheel and builds from source.
-Tear it down again when it is no longer needed; the library never depends on it.
+
+**Removed again on 2026-09-16**, once the fixture was captured and the driver
+proven on the panel — the same condition §11.3 set for the other Pi. The venv,
+pip's cache and `python3-dev` with its nine auto-installed dependencies all
+went; 330 MB in total. SPI and I2C stay enabled, `i2c-dev` stays loaded, and
+the system Python is untouched because it is not ours to remove.
+
+The full hardware suite was re-run afterwards and passes, which is the useful
+part: **the library never depended on it.** No Python is needed to drive a
+panel, only to regenerate a fixture.
