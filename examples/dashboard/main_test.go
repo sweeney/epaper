@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sweeney/epaper/inky"
 	"github.com/sweeney/epaper/render"
 )
 
@@ -119,4 +120,59 @@ func inksUsed(c *render.Canvas) []uint8 {
 		out = append(out, k)
 	}
 	return out
+}
+
+// The dashboard must work on every panel the library drives, not just the one
+// it was laid out on. The two differ by a factor of two and a half in height,
+// which is enough that a fixed 54px header leaves the smaller one no room for
+// a single reading.
+func TestDrawWhatFitsOnEverySupportedPanel(t *testing.T) {
+	for _, p := range inky.SupportedPanels() {
+		t.Run(p.Model, func(t *testing.T) {
+			bounds := image.Rect(0, 0, p.Width, p.Height)
+			c, err := drawWhatFits(bounds, panelPalette, sample())
+			if err != nil {
+				t.Fatalf("drawWhatFits(): %v", err)
+			}
+			if got := c.Image().Bounds(); got != bounds {
+				t.Errorf("bounds = %v, want %v", got, bounds)
+			}
+
+			// It must actually draw something, and use the accent inks: a
+			// blank panel would also "fit".
+			seen := map[uint8]bool{}
+			for _, px := range c.Image().Pix {
+				seen[px] = true
+			}
+			if len(seen) < 3 {
+				t.Errorf("used %d inks; the dashboard drew almost nothing", len(seen))
+			}
+		})
+	}
+}
+
+// Dropping readings is the fallback, not the first move: a panel with room for
+// all of them must show all of them.
+func TestDrawWhatFitsKeepsEveryReadingWhenItCan(t *testing.T) {
+	s := sample()
+	c, err := drawWhatFits(image.Rect(0, 0, 400, 300), panelPalette, s)
+	if err != nil {
+		t.Fatalf("drawWhatFits(): %v", err)
+	}
+	full := render.NewCanvas(image.Rect(0, 0, 400, 300), panelPalette)
+	if err := Draw(full, s); err != nil {
+		t.Fatalf("Draw(): %v", err)
+	}
+	if string(c.Image().Pix) != string(full.Image().Pix) {
+		t.Error("drawWhatFits dropped a reading on a panel with room for all of them")
+	}
+}
+
+// And when nothing can fit, it must still report rather than loop or draw
+// nonsense. A panel this small is not one this library drives, but the guard
+// is what stops the retry loop from being unbounded.
+func TestDrawWhatFitsGivesUpOnAnImpossiblePanel(t *testing.T) {
+	if _, err := drawWhatFits(image.Rect(0, 0, 40, 20), panelPalette, sample()); err == nil {
+		t.Error("drawWhatFits() on a 40x20 panel = nil error")
+	}
 }
