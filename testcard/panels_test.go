@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/sweeney/epaper"
@@ -172,5 +175,31 @@ func TestCircleContentStaysInsideEverySupportedPanel(t *testing.T) {
 				t.Errorf("%d pixels of disc content landed outside the disc, first at %v", escaped, first)
 			}
 		})
+	}
+}
+
+// The README embeds goldens from this directory directly, rather than keeping
+// its own copies, so that the picture on the front page is always the one the
+// tests assert against and cannot quietly drift from what the library draws.
+//
+// The cost of that is a link from a document to a filename, which is exactly
+// the kind of thing that rots silently: renaming a golden here would leave a
+// broken image on the project's front page, and nothing else would complain.
+// This is where to notice, because this file is what names them.
+func TestREADMEImagesExist(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "README.md"))
+	if err != nil {
+		t.Fatalf("reading README: %v", err)
+	}
+
+	refs := regexp.MustCompile(`testdata/golden/[A-Za-z0-9._-]+\.png`).FindAllString(string(readme), -1)
+	if len(refs) == 0 {
+		t.Fatal("the README references no goldens; if that is deliberate, delete this test")
+	}
+
+	for _, ref := range refs {
+		if _, err := os.Stat(filepath.Join("..", ref)); err != nil {
+			t.Errorf("README references %s, which does not exist: %v", ref, err)
+		}
 	}
 }

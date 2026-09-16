@@ -15,6 +15,30 @@ e-ink screen thinks only about the picture.
 > and the milestone list, [`PLAN.md` §13](PLAN.md) for what the second
 > controller cost, and [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to add one.
 
+<table>
+<tr>
+<td align="center" valign="bottom">
+<img src="testdata/golden/panel-400x300-testcard.png" width="400" alt="Test card on a 400x300 panel: castellated border, luminance ladders down both sides, frequency gratings in the corners, step wedges, and a central white disc reading TEST CARD in red above the panel model and two lines of sample text.">
+</td>
+<td align="center" valign="bottom">
+<img src="testdata/golden/panel-250x122-testcard.png" width="250" alt="The same test card on a 250x122 panel: the same elements, proportionally placed, in a smaller frame. Too small for a heading, so the disc carries the panel model alone.">
+</td>
+</tr>
+<tr>
+<td align="center"><b>Inky wHAT 4.2"</b> — 400 × 300</td>
+<td align="center"><b>Inky pHAT 2.13"</b> — 250 × 122</td>
+</tr>
+</table>
+
+One card, one code path, laid out from whichever panel it is given. Four inks
+and nothing in between: every grey, orange and pink above is ordered dither or
+a 1px checkerboard, which this hardware resolves cleanly.
+
+Those are not marketing renders. They are the committed goldens the tests
+assert against, so they cannot drift from what the library actually draws — and
+they are shown at 1:1 on purpose, because a panel render at 2× flatters exactly
+the defects that ruin small text on a display with no intermediate tones.
+
 ## What it looks like
 
 ```go
