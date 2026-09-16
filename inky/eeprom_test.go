@@ -47,6 +47,59 @@ func TestParseEEPROMRealBoard(t *testing.T) {
 	}
 }
 
+// The other real board. Captured from the pHAT on 2026-09-16.
+//
+// This is what pins the display-variant NUMBER, and that matters more than it
+// looks: the variant byte is the only thing that tells the two four-ink Inky
+// boards apart, and picking the wrong driver produces a blank panel rather
+// than an error.
+func TestParseRealPHat(t *testing.T) {
+	got, err := inky.ParseEEPROM(fixture(t, "phat-jd79661.bin"))
+	if err != nil {
+		t.Fatalf("ParseEEPROM() error: %v", err)
+	}
+
+	for _, tc := range []struct {
+		field     string
+		got, want any
+	}{
+		{"Width", got.Width, 250},
+		{"Height", got.Height, 122},
+		{"Colour", got.Colour, "red/yellow"},
+		{"DisplayVariant", int(got.DisplayVariant), 23},
+		{"Model", got.Model, "Red/Yellow pHAT (JD79661)"},
+		{"WriteTime", got.WriteTime, "2026-04-15 23:32:34.2"},
+		{"PCBVariant (raw)", int(got.PCBVariant), 100},
+		{"PCBRevision", got.PCBRevision(), "10.0"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.field, tc.got, tc.want)
+		}
+	}
+}
+
+// The two boards must not be confusable. Everything else about them matches —
+// same colour string, same PCB revision, same pin map — so the variant byte is
+// carrying the whole distinction on its own.
+func TestTheTwoRealBoardsDifferOnlyByVariantAndSize(t *testing.T) {
+	what, err := inky.ParseEEPROM(fixture(t, "what-jd79668.bin"))
+	if err != nil {
+		t.Fatalf("ParseEEPROM(wHAT): %v", err)
+	}
+	phat, err := inky.ParseEEPROM(fixture(t, "phat-jd79661.bin"))
+	if err != nil {
+		t.Fatalf("ParseEEPROM(pHAT): %v", err)
+	}
+
+	if what.DisplayVariant == phat.DisplayVariant {
+		t.Fatalf("both boards report display variant %d; nothing can tell them apart", what.DisplayVariant)
+	}
+	if what.Colour != phat.Colour {
+		t.Errorf("colours differ (%q vs %q) — if that ever becomes true, the dispatch could use it",
+			what.Colour, phat.Colour)
+	}
+}
+
 // "red/yellow" means BOTH inks at once, not a choice between them. The board's
 // own handover notes said otherwise and were wrong, which cost a day.
 func TestRealBoardIsFourInk(t *testing.T) {

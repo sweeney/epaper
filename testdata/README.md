@@ -26,7 +26,8 @@ offset  size  field
 
 | File | Content | A correct parser must |
 |---|---|---|
-| `what-jd79668.bin` | **The real board.** `400x300`, colour 7 (`red/yellow`), pcb 100 (`v10.0`), variant 24 (`Red/Yellow wHAT (JD79668)`), written `2025-08-20 15:51:55.5` | decode all six fields exactly |
+| `what-jd79668.bin` | **A real board.** `400x300`, colour 7 (`red/yellow`), pcb 100 (`v10.0`), variant 24 (`Red/Yellow wHAT (JD79668)`), written `2025-08-20 15:51:55.5` | decode all six fields exactly |
+| `phat-jd79661.bin` | **The other real board.** `250x122`, colour 7 (`red/yellow`), pcb 100 (`v10.0`), variant 23 (`Red/Yellow pHAT (JD79661)`), written `2026-04-15 23:32:34.2` | decode all six fields exactly, and route to a *different* driver |
 | `truncated.bin` | 12 bytes — a short read | return an error, **not** a zero-valued struct |
 | `zeroed.bin` | 29 × `0x00` — no EEPROM present | error: geometry `0x0` is impossible |
 | `ones.bin` | 29 × `0xFF` — floating bus, nothing ACKing | error: geometry `65535x65535` is impossible |
@@ -37,6 +38,14 @@ offset  size  field
 The last three exist because each corresponds to a plausible parser bug:
 out-of-range slice index, accepting nonsense geometry, and mishandling an empty
 Pascal string.
+
+The first two exist as a **pair**. They differ in exactly two places — the
+geometry, and the display-variant byte at offset 6 — and agree on everything
+else, including the colour string and the PCB revision. That byte is the only
+thing that tells the two four-ink Inky boards apart, and choosing the wrong
+driver from it produces a blank panel rather than an error. So it is pinned
+against both captures rather than against a constant that could be renumbered
+to agree with itself; see `inky.TestTheRealBoardsReachTheRightDrivers`.
 
 ### Why `pcbVariant` is divided by ten
 
@@ -200,18 +209,64 @@ Only once (3) passes is it worth spending 20 seconds drawing it on the panel.
 
 ---
 
-## 3. `golden/` — render goldens
+## 3. `frame/` — the JD79661 frame-layout oracle
+
+The JD79661 does not send its framebuffer row-major. It pads the panel's short
+axis from 122 to 128 and sends the result rotated a quarter turn, so the wire
+stream is 8,000 bytes for a 250×122 panel rather than the 7,625 the visible
+pixels would need. `PLAN.md` §13.2 works the mapping out index by index.
+
+That derivation is the single highest-risk piece of the driver — get the sign
+wrong and the panel draws a complete, correctly coloured, upside-down picture —
+so it is pinned against the vendor rather than against itself.
+
+| File | Size | What it is |
+|---|---|---|
+| `jd79661-frame.idx` | 30,500 B | one palette index per pixel, row-major from (0,0) |
+| `jd79661-frame.bin` | 8,000 B | the packed framebuffer the **real vendor library** sent for it |
+| `jd79661-frame.png` | — | what the input looks like, for a human |
+
+The pattern is `(x*7 + y*3) % 4` with the four corners forced to four different
+inks — red, yellow, white, black, clockwise from the top left. The corners are
+the point: a transposition, a flip, or an off-by-one in the six rows of padding
+each move them, and each otherwise produces a frame that looks entirely
+plausible.
+
+`driver/jd79661.TestFrameMatchesTheVendorOracle` asserts our 8,000 bytes equal
+these byte for byte. `TestVendorOracleUnpacksToTheOriginalPicture` checks the
+other direction, so a driver and a test that are wrong in the same way still
+fail.
+
+Only the *layout* is pinned here. Dithering, quantisation and geometry are
+panel-independent and already covered by `conformance/`, which needs no second
+copy at another size.
+
+---
+
+## 4. `golden/` — render goldens
 
 *(Created at M4.)* PNGs produced by our own Go `render` package, for things
 that cannot be compared against the vendor — anything involving text.
 
-Regenerate with `go test ./render -update`. **Review the diff before
-committing**: a golden test that is regenerated without being looked at asserts
-nothing at all.
+Regenerate with `make golden`. **Review the diff before committing**: a golden
+test that is regenerated without being looked at asserts nothing at all.
+
+The `panel-*` set is generated once per entry in `inky.SupportedPanels()` —
+the test card, the orientation card and the conformance pattern, at every
+resolution the library drives. That is deliberate, and it is how CI comes to
+render every panel: `make report` and the CI artifact display everything in
+this directory, so adding a driver adds its renders to the report without
+anyone remembering to.
+
+It is also how a real bug was caught. The card was laid out for 400×300 in
+absolute pixels and was *scrambled* at 250×122 — not clipped: the central disc
+fell off the bottom edge and the model name ran out through the side of it.
+Its 400×300 golden passed throughout, because nobody had rendered it anywhere
+else.
 
 ---
 
-## 4. Regenerating
+## 5. Regenerating
 
 `tools/conformance.py` rebuilds the conformance set. It must run on the Pi, in
 the reference venv, because it uses the real vendor library as the oracle for
@@ -222,13 +277,28 @@ the packing.
 regenerate these files, never to use the library.
 
 ```bash
-scp tools/conformance.py sweeney@192.168.1.6:~/
-ssh sweeney@192.168.1.6 'cd /tmp && ~/inky-trial/venv/bin/python ~/conformance.py'
-scp sweeney@192.168.1.6:/tmp/conformance.* testdata/conformance/
+scp tools/conformance.py "$HOST":~/
+ssh "$HOST" 'cd /tmp && ~/inky-trial/venv/bin/python ~/conformance.py'
+scp "$HOST":/tmp/conformance.* testdata/conformance/
 ```
 
-It monkeypatches `_update` so **nothing touches SPI, GPIO or the panel** — it is
-safe to run and takes about a second.
+`$HOST` is `user@your-pi`, as everywhere else in this repo.
+
+`tools/frame_jd79661.py` rebuilds `frame/` the same way, and must run on a Pi
+**with the pHAT attached** — it asks `inky.auto()` for the driver, so the board
+has to identify itself:
+
+```bash
+scp tools/frame_jd79661.py "$HOST":/tmp/
+ssh "$HOST" 'mkdir -p /tmp/fx && cd /tmp/fx && ~/inky-trial/venv/bin/python /tmp/frame_jd79661.py'
+scp "$HOST":/tmp/fx/jd79661-frame.* testdata/frame/
+```
+
+Both monkeypatch `_update` so **nothing touches SPI, GPIO or the panel** — they
+are safe to run and take about a second.
+
+On a fresh Pi the venv needs `python3-dev` before it will install: `spidev` has
+no aarch64 wheel and builds from source.
 
 `tools/testcard_f_reference.py` is the four-ink Test Card F used during
 bring-up. It is a *visual* reference for what the library should be capable of,
@@ -237,9 +307,9 @@ with no hardware.
 
 ---
 
-## 5. If a fixture and the hardware ever disagree
+## 6. If a fixture and the hardware ever disagree
 
 Trust the hardware, re-capture, and write down what changed. These files record
-one board at one moment; a different board revision could legitimately differ —
-`what-jd79668.bin` in particular is *our* board's serial-numbered record, not a
-specification.
+two boards at one moment each; a different board revision could legitimately
+differ — `what-jd79668.bin` and `phat-jd79661.bin` are *our* boards'
+serial-numbered records, not specifications.
