@@ -101,10 +101,28 @@ func FontSizes() []int {
 // LargestFontSizeFor returns the biggest size from [FontSizes] whose line
 // height fits in height pixels, or 0 if none does.
 //
-// This is the question a layout actually asks, and asking it before drawing
-// beats calling [render.Canvas.TextFitted] and discovering the answer from a
-// rendered result — particularly when the text must NOT be resized to fit,
-// which on a display that refreshes every few minutes is the usual case.
+// # Prefer asking the family, in drawing code
+//
+// This function names THIS family's ladder, so calling it from code that draws
+// hardcodes this family into that code — even where the family arrives as a
+// parameter and the code claims to work with any. A consumer pointed that out
+// in issue #4, having gone looking for a use for this and found a better one.
+//
+// [render.FontFamily] requires an implementation to round down, so asking for
+// the height you have already gets you the largest face that fits:
+//
+//	f, err := ff(band.Dy() - padding)   // no ladder knowledge needed
+//
+// That is the right call in a layout. It also degrades sensibly on a panel the
+// layout was never designed for, which a hardcoded size does not.
+//
+// # Where this does belong
+//
+// Tests, and anything inspecting the family rather than drawing with it.
+// Knowing the ladder is exactly the point when the assertion is about the
+// ladder — "this headline uses 34 and the next rung up genuinely cannot fit
+// beside the clock" is a regression test, and it starts failing the day the
+// ladder gains a rung between them. Which is the outcome the reporter wanted.
 //
 // Zero means the box is shorter than 13px, which no bundled face can fill. The
 // bench found 10px to be the legibility floor on this hardware and 8px
@@ -133,6 +151,19 @@ const inconsolataHeight = 17
 // Use it when the card's heading should be in your own typeface. The small
 // labels stay bitmap on purpose: that is the whole finding behind this
 // package's font choices, and overriding it makes them worse, not different.
+//
+// Like [Fonts], it honours [render.FontFamily]'s contract: the face it returns
+// is never TALLER than the size asked for. That needs saying because it is not
+// what a naive implementation does. An outline face built at Size=N has a line
+// height of roughly 1.17*N — ascent plus descent exceeds the em — so asking
+// opentype for the requested number and handing it back overshoots at every
+// size. This one searches down for the largest point size whose LINE HEIGHT
+// fits, which is the number a layout is actually working with.
+//
+// It used to overshoot, by up to 13px at the sizes a headline uses. Nothing in
+// this repo noticed, because the card sizes its own text with TextFitted,
+// which measures what it is given and defends itself. A consumer leaning on
+// the contract to size text without knowing the ladder found it (issue #4).
 func FontsWith(ttf []byte) (render.FontFamily, error) {
 	parsed, err := opentype.Parse(ttf)
 	if err != nil {
@@ -142,6 +173,19 @@ func FontsWith(ttf []byte) (render.FontFamily, error) {
 
 	var mu sync.Mutex
 	cache := map[int]font.Face{}
+
+	// newFace builds the outline face at a given point size. DPI 72 makes one
+	// point equal one pixel. Hinting is off: above the bitmap ceiling it
+	// changes little, and x/image's hinting distorts glyphs more than it helps.
+	newFace := func(points int) (font.Face, error) {
+		f, err := opentype.NewFace(parsed, &opentype.FaceOptions{
+			Size: float64(points), DPI: 72, Hinting: font.HintingNone,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("testcard: face at %dpx: %w", points, err)
+		}
+		return f, nil
+	}
 
 	return func(size int) (font.Face, error) {
 		if size < bitmapCeiling {
@@ -153,14 +197,30 @@ func FontsWith(ttf []byte) (render.FontFamily, error) {
 		if f, ok := cache[size]; ok {
 			return f, nil
 		}
-		// DPI 72 makes one point equal one pixel, so size means pixels.
-		// Hinting is off: above the bitmap ceiling it changes little, and
-		// x/image's hinting distorts glyphs more than it helps.
-		f, err := opentype.NewFace(parsed, &opentype.FaceOptions{
-			Size: float64(size), DPI: 72, Hinting: font.HintingNone,
-		})
+
+		// Largest point size whose line height fits in the pixels asked for.
+		// Walking down from the request is at most a handful of steps, since
+		// the overshoot is proportional and small; a closed-form guess would
+		// have to trust the ratio, and a font is free to have whatever metrics
+		// it likes.
+		for points := size; points >= 1; points-- {
+			f, err := newFace(points)
+			if err != nil {
+				return nil, err
+			}
+			if render.LineHeight(f) <= size {
+				cache[size] = f
+				return f, nil
+			}
+		}
+
+		// Every point size is too tall for the box, which means the font has
+		// extraordinary metrics. Fall back to the bitmap family rather than
+		// returning something that will overflow: too small is recoverable,
+		// too big silently draws over the next element.
+		f, err := bitmap(size)
 		if err != nil {
-			return nil, fmt.Errorf("testcard: face at %dpx: %w", size, err)
+			return nil, err
 		}
 		cache[size] = f
 		return f, nil

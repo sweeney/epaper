@@ -32,6 +32,35 @@ const alphaThreshold = 0x5555
 // FontFamily produces a face at a requested pixel size. It is what
 // [Canvas.TextFitted] shrinks through.
 //
+// # An implementation must round DOWN
+//
+// The face returned must never be TALLER than the size asked for: its
+// [LineHeight] must be at most sizePx. The one permitted exception is a
+// request below the family's smallest face, where there is nothing smaller to
+// give; such a family returns its smallest and the caller has to notice.
+//
+// This is a contract rather than a nicety, because it is what makes text
+// sizing possible WITHOUT knowing the family. Asking for the height of the box
+// you have is then the same as asking for the largest face that fits it:
+//
+//	f, err := ff(band.Dy())   // whatever fits, whoever supplied the family
+//
+// Code written that way takes a FontFamily as a parameter and stays correct
+// for any of them, including one the author never saw. Code that instead
+// consults a particular family's list of sizes has quietly hardcoded that
+// family. A consumer made exactly that observation in issue #4, and it is the
+// better pattern.
+//
+// Getting it wrong is easy and quiet. An outline face built at Size=N has a
+// line height of about 1.17*N, because ascent plus descent exceeds the em — so
+// the obvious implementation, handing opentype the number it was given,
+// overshoots at every size. testcard.FontsWith did exactly that until the same
+// issue prompted a look.
+//
+// [Canvas.TextFitted] and [FittedSize] defend themselves by measuring what
+// they get, so they work with a family that breaks this. Callers using the
+// pattern above do not, which is why it is written down here.
+//
 // TextFitted may ask for many sizes in one call, so an implementation that
 // parses or allocates should cache. Faces are not closed by this package:
 // their lifetime belongs to whoever made them, and closing a cached face would
