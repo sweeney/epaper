@@ -301,6 +301,77 @@ func (c *Canvas) LineWeight(a, b image.Point, i epaper.Ink, weight int) {
 	}
 }
 
+// Dash draws a broken line from a to b: on pixels inked, then off skipped,
+// repeating, starting inked at a.
+//
+// off of zero or less is a solid line; on of zero or less draws nothing. Both
+// are legitimate results of computing a pattern from data, so neither is an
+// error.
+//
+// The phase counts STEPS along the line rather than distance across the
+// screen, so a diagonal dashes at the same rhythm as an axis-aligned one and
+// needs no real arithmetic. The rule is in testdata/README.md.
+//
+// # Why a four-ink panel needs this more than a screen does
+//
+// On a colour display you separate one kind of thing from another by hue. Here
+// you very often cannot, and the reason is worth understanding before reaching
+// for an accent ink instead.
+//
+// This panel has four inks, and on a well-designed screen the accents are
+// carrying MEANING — red is expensive, yellow is a warning. Spending red on
+// "this line is a marker, not data" both wastes it and, worse, teaches the eye
+// that red is sometimes decorative, which is how an accent stops being read at
+// all. So the accents are unavailable. Black is usually taken by the data
+// itself. That leaves one ink and no line styles, and pattern is the only
+// channel left to say "different kind of thing".
+//
+// The case that produced this (issue #5): a price curve drawn in black at 2px,
+// with a solid black vertical rule marking the current time. The rule read as
+// a price SPIKE wherever the curve happened to be flat beside it — exactly the
+// quiet overnight stretch somebody is squinting at to find out when power is
+// cheap. The reporter found it by looking at a render and briefly believing
+// their own chart. Dashing the marker fixed it, and no choice of ink would
+// have.
+func (c *Canvas) Dash(a, b image.Point, i epaper.Ink, on, off int) {
+	idx, ok := c.ink(i)
+	if !ok {
+		return
+	}
+	if on < 1 {
+		return
+	}
+	if off < 1 {
+		c.Line(a, b, i)
+		return
+	}
+
+	period := on + off
+	dx, sx := abs(b.X-a.X), sign(b.X-a.X)
+	dy, sy := -abs(b.Y-a.Y), sign(b.Y-a.Y)
+	err := dx + dy
+	x, y := a.X, a.Y
+	step := 0
+	for {
+		if step%period < on {
+			c.setIndex(x, y, idx)
+		}
+		if x == b.X && y == b.Y {
+			return
+		}
+		e2 := 2 * err
+		if e2 >= dy {
+			err += dy
+			x += sx
+		}
+		if e2 <= dx {
+			err += dx
+			y += sy
+		}
+		step++
+	}
+}
+
 // Ellipse fills the ellipse inscribed in a rectangle, touching each side at
 // exactly one point.
 //

@@ -308,6 +308,37 @@ Pick by what you want to give: the size, the line count, or the words.
 two. An ellipsis is visible on the glass, so the viewer can see something was
 cut — which is the job the error does for text that silently vanishes.
 
+Placement is a separate axis: `Canvas.TextAligned(r, s, f, ink, align)` takes
+`AlignLeft`, `AlignCentre` or `AlignRight`, and composes with all three. A
+numeric column, a clock and an axis label all want right-alignment before they
+want anything else.
+
+### Dither has 17 tones, not a continuous range
+
+`Dither`'s `ratio` is a `float64` and reads like a knob you can turn anywhere.
+It is not: the 4×4 matrix quantises it, so `0.18` and `0.20` draw the same
+picture. `render.DitherLevels()` is the list — `0, 1/16, 2/16 … 1` — and the
+k-th inks **exactly** k sixteenths of the area, so the number is also the
+answer. `render.NearestDitherLevel(r)` says which rung a value you already have
+lands on.
+
+### Pattern is a channel when ink is not
+
+`Dash(a, b, ink, on, off)` exists for a reason worth knowing before you reach
+for an accent ink instead.
+
+On a colour screen you separate one kind of thing from another by hue. Here you
+often cannot: on a well-designed panel the accents are carrying *meaning* — red
+is expensive — and spending red on "this is a marker, not data" teaches the eye
+that red is sometimes decorative, which is how an accent stops being read at
+all. Black is usually taken by the data. That leaves one ink and no line
+styles, so pattern is the only channel left.
+
+The case that produced it: a price curve in black at 2px with a solid black
+"now" marker. The marker read as a price *spike* wherever the curve was flat
+beside it — exactly the quiet overnight stretch someone is squinting at.
+Dashing it fixed what no choice of ink could.
+
 ## Try it
 
 ```bash

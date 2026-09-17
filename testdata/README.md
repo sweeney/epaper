@@ -187,6 +187,22 @@ Two consequences, both deliberate and neither a bug:
   segments share an endpoint, and the square stamped there fills the wedge that
   would otherwise be a notch on the outside of the turn.
 
+**Dashed line**, `on` inked then `off` skipped, repeating, starting inked at
+`a`: the Bresenham line above with a step counter.
+
+```
+step = 0
+at each plotted point:
+    if step mod (on+off) < on: plot
+    step += 1
+```
+
+The phase counts **steps along the line**, not distance across the screen, so a
+diagonal dashes at the same rhythm as an axis-aligned one. Equal screen lengths
+would need a real square root, which is the unportable rasteriser this file
+exists to avoid. `off <= 0` is a solid line and `on <= 0` draws nothing; both
+are reachable by computing a pattern from data, so neither is an error.
+
 **Convex polygon fill**, by half-space test. For each edge `a -> b` the edge
 function
 
