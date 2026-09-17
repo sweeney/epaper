@@ -11,13 +11,27 @@ import (
 	"golang.org/x/image/font/opentype"
 )
 
-// bitmapCeiling is the size above which a scaled outline is good enough.
+// DefaultOutlineFrom is the size at or above which [FontsWith] uses your
+// outline face, and below which it keeps a hand-drawn bitmap.
 //
 // Below it, outlines lose. A stem is about a pixel wide, lands at an arbitrary
 // sub-pixel position, and after thresholding some stems come out one pixel and
 // their neighbours two — which reads as uneven spacing. Settled by drawing the
 // candidates on a real panel; see [render.FontFamily].
-const bitmapCeiling = 17
+//
+// It was 17, which was wrong, and the reason is a trap worth naming: 17 is a
+// LINE height, and an outline built to fit a 17px line has a cap height of
+// about 10px. Ten pixels is the legibility floor this package's own bench
+// found — so the old crossover put an outline exactly where the docs say an
+// outline cannot work, replacing a bitmap that was fine. A consumer hit it on
+// a real panel (issue #4) and saw a mangled label at the one size they had not
+// thought to check.
+//
+// 26 is the first rung whose outline clears that: cap height about 15.6px
+// against 10.1px at 17. Use [FontsWithFrom] to choose another — the right
+// value depends on the face, and a display face with a large x-height can
+// reasonably go lower.
+const DefaultOutlineFrom = 26
 
 // bases are the hand-drawn faces the family scales, largest first.
 //
@@ -178,6 +192,44 @@ func FontSizes() []int {
 	return out
 }
 
+// FontRung is one step of the ladder: the size, and how wide a glyph is at it.
+type FontRung struct {
+	// Size is the face's line height in pixels, as [FontSizes] reports it.
+	Size int
+
+	// Advance is the width of one glyph at that size. Every face this family
+	// uses is monospace, so a string of n characters is exactly n*Advance
+	// wide. That is NOT true of a [render.FontFamily] in general — a
+	// proportional face has no single advance — so this belongs here, on the
+	// bundled family, and not on the interface.
+	Advance int
+}
+
+// FontRungs is [FontSizes] with the glyph width beside each size.
+//
+// It exists because going UP this ladder does not reliably make text narrower
+// or wider, and a caller whose constraint is width cannot see that from the
+// sizes alone. 34 to 39 widens a glyph from 16px to 21px — 31% — because those
+// rungs are different faces; 65 to 68 NARROWS it from 35 to 32. A consumer
+// found the first of those by shipping it (issue #4).
+//
+// For laying out real text prefer [render.FittedSize], which measures the
+// actual string against both axes and works for any family. This is for tests
+// and for reasoning about the ladder itself, where knowing the numbers without
+// rendering is the point.
+func FontRungs() []FontRung {
+	ff := Fonts()
+	out := make([]FontRung, 0, len(fontSizes))
+	for _, size := range fontSizes {
+		f, err := ff(size)
+		if err != nil {
+			continue
+		}
+		out = append(out, FontRung{Size: size, Advance: render.MeasureText("M", f)})
+	}
+	return out
+}
+
 // LargestFontSizeFor returns the biggest size from [FontSizes] whose line
 // height fits in height pixels, or 0 if none does.
 //
@@ -230,7 +282,7 @@ const basicfontHeight = 13
 const inconsolataHeight = 17
 
 // FontsWith is [Fonts] for the small sizes, scaling the supplied TrueType font
-// above the point where outlines start to work — around 17px.
+// at [DefaultOutlineFrom] and above, where outlines start to work.
 //
 // Use it when the card's heading should be in your own typeface. The small
 // labels stay bitmap on purpose: that is the whole finding behind this
@@ -249,6 +301,26 @@ const inconsolataHeight = 17
 // which measures what it is given and defends itself. A consumer leaning on
 // the contract to size text without knowing the ladder found it (issue #4).
 func FontsWith(ttf []byte) (render.FontFamily, error) {
+	return FontsWithFrom(ttf, DefaultOutlineFrom)
+}
+
+// FontsWithFrom is [FontsWith] with the crossover chosen explicitly: sizes
+// below outlineFrom come from the bundled bitmap family, and sizes at or above
+// it from your face.
+//
+// Lower it for a face with a large x-height that survives smaller, raise it to
+// keep more of the screen hand-drawn. Below 13 is refused: nothing this
+// package can produce is smaller, and an outline there is unreadable on the
+// hardware rather than merely poor.
+//
+// Every consumer wanting their own typeface was otherwise writing the same ten
+// lines to move the crossover, having first worked out why their small text
+// looked wrong — which took the reporter of issue #4 a render and a squint.
+func FontsWithFrom(ttf []byte, outlineFrom int) (render.FontFamily, error) {
+	if outlineFrom < basicfontHeight {
+		return nil, fmt.Errorf("testcard: outline crossover %d is below the smallest bitmap face (%d); "+
+			"an outline cannot serve that size on this hardware", outlineFrom, basicfontHeight)
+	}
 	parsed, err := opentype.Parse(ttf)
 	if err != nil {
 		return nil, fmt.Errorf("testcard: parsing font: %w", err)
@@ -272,7 +344,7 @@ func FontsWith(ttf []byte) (render.FontFamily, error) {
 	}
 
 	return func(size int) (font.Face, error) {
-		if size < bitmapCeiling {
+		if size < outlineFrom {
 			return bitmap(size)
 		}
 

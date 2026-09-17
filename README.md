@@ -244,26 +244,44 @@ panel:
 | 34px, Inconsolata ×2 | 240px | 80px | **320 — fits** |
 | 39px, basicfont ×3 | 315px | 105px | 420 — no |
 | 51px, Inconsolata ×3 | 360px | 120px | 480 — no |
-| **40px, proportional via `FontsWith`** | 298px | 87px | **385 — fits** |
+| **40px, proportional via `FontsWith`** (Go Regular) | 298px | 87px | **385 — fits** |
 
 If a headline must be big *and* long, the lever is a proportional face, not a
-denser ladder. `FontsWith` keeps the bitmaps for small text — where an outline
-genuinely cannot compete — and takes yours above ~17px.
+denser ladder. The exact numbers depend on the face — Atkinson Hyperlegible
+Bold measures 271px for that headline at 39px, against Go Regular's 298 at 40 —
+so measure yours.
+
+`FontsWith` keeps the bitmaps for small text, where an outline genuinely cannot
+compete, and takes yours from `DefaultOutlineFrom` (26px) upward.
+`FontsWithFrom` moves that crossover if your face survives smaller.
 
 So a headline with anything beside it has one usable size on that panel, not
 two. Decide which step you are designing to before you lay the screen out.
 
 **In drawing code, do not name the sizes at all.** A `FontFamily` is required
-to round down, so asking for the height you have already gets you the largest
-face that fits:
+to round down, so asking for the height you have gets the largest face that
+fits it:
 
 ```go
-f, err := ff(band.Dy() - padding)   // whatever fits, whoever supplied ff
+f, err := ff(band.Dy() - padding)   // bounds HEIGHT only
 ```
 
-That works for any family, including one your caller supplied and you have
-never seen, and it degrades sensibly on a panel your layout was not designed
-for. Naming a size instead hardcodes one family into code that looks generic.
+That works for any family, including one your caller supplied. Naming a size
+instead hardcodes one family into code that looks generic.
+
+**But that bounds height and nothing else.** Rungs come from different
+hand-drawn faces with different advance-to-height ratios, so going *up* the
+ladder can make text 31% wider (34 → 39) or narrower (65 → 68). If your
+constraint is width — a headline beside a clock — measure both axes:
+
+```go
+// Once, against the widest string the screen can ever show.
+size, face, err := render.FittedSize(band, "WAIT IF YOU CAN", ff)
+```
+
+Sizing against the *current* text instead makes a headline resize when the
+words change, which looks like a fault on a panel that refreshes every few
+minutes. Use `Canvas.TextTruncated` for anything that still runs long.
 
 `testcard.FontSizes()` and `LargestFontSizeFor()` are for **tests** and for
 inspecting a family — where knowing the ladder is the whole point. "This

@@ -51,6 +51,30 @@ const alphaThreshold = 0x5555
 // family. A consumer made exactly that observation in issue #4, and it is the
 // better pattern.
 //
+// # Rounding down bounds the HEIGHT and nothing else
+//
+// This is the part that bites, and it bit the consumer above on the very next
+// release. A family may put any advance width it likes on the face it returns.
+// Asking for a taller box therefore does not promise narrower text, WIDER
+// text, or any particular relationship at all:
+//
+//   - In testcard.Fonts, going from the 34px rung to the 39px rung makes text
+//     31% wider, because those rungs come from different hand-drawn faces with
+//     different advance-to-height ratios.
+//   - Going from 65px to 68px makes it NARROWER, for the same reason in the
+//     other direction.
+//
+// So a layout whose binding constraint is WIDTH gets no protection from this
+// contract. Use [FittedSize], which measures both axes:
+//
+//	size, face, err := FittedSize(band, widestStringYouWillEverDraw, ff)
+//
+// Pass the widest string the screen can ever show, not the one it happens to
+// be showing, and reuse the face. Sizing against the current text makes a
+// headline change size when the words change, which on a panel that refreshes
+// every few minutes reads as a fault. [Canvas.TextTruncated] handles anything
+// that still runs long.
+//
 // Getting it wrong is easy and quiet. An outline face built at Size=N has a
 // line height of about 1.17*N, because ascent plus descent exceeds the em — so
 // the obvious implementation, handing opentype the number it was given,
