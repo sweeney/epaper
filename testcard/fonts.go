@@ -19,23 +19,40 @@ import (
 // candidates on a real panel; see [render.FontFamily].
 const bitmapCeiling = 17
 
+// bases are the hand-drawn faces the family scales, largest first.
+//
+// TWO of them, and that is what makes the ladder usable. Each contributes
+// whole multiples of its own line height — 17, 34, 51, 68 from Inconsolata and
+// 13, 26, 39, 52, 65 from basicfont — and interleaving them halves the worst
+// gap. See [FontSizes] for why that matters and what it costs.
+var bases = []struct {
+	face font.Face
+	lh   int
+}{
+	{inconsolata.Regular8x16, inconsolataHeight},
+	{basicfont.Face7x13, basicfontHeight},
+}
+
 // Fonts returns the card's default faces, which need no font file.
 //
-// Small sizes are hand-drawn bitmap faces from golang.org/x/image —
-// [basicfont.Face7x13] below 17px, [inconsolata.Regular8x16] above — because
-// those were designed on a pixel grid and stay crisp on a panel with no
-// intermediate tones to soften an edge with.
+// Every face is a hand-drawn bitmap from golang.org/x/image, integer-scaled
+// with [render.ScaleFace] when it needs to be bigger. Bitmaps because they
+// were designed on a pixel grid and stay crisp on a panel with no intermediate
+// tones to soften an edge with; WHOLE multiples because a fractional scale
+// puts glyph edges between pixels, which is the same problem in a different
+// coat. A heading is therefore exactly as crisp as the body text rather than
+// being the one blurry thing on the panel.
 //
-// Large sizes are the same bitmap face integer-scaled with [render.ScaleFace],
-// so a heading is exactly as crisp as the body text rather than being the one
-// blurry thing on the panel. The trade is that sizes come in steps of 17px:
-// asking for 48px gets you 34px, the largest whole multiple that fits. The
-// face returned is never TALLER than the size requested, which is what
-// [render.Canvas.TextFitted] relies on — with one unavoidable exception:
-// nothing here is smaller than 13px, so a request below that gets the 13px
-// face. TextFitted will then correctly report that the box cannot hold text,
-// which on this hardware it cannot: the bench found 10px to be the floor for
-// legibility and 8px unreadable.
+// The face returned is never TALLER than the size requested — see
+// [render.FontFamily], where that is a contract and not merely a habit — so
+// asking for the height of a box gets the largest face that fits it. The one
+// exception is a request below 13px, where there is nothing smaller to give:
+// the 13px face comes back and the caller has to notice.
+// [render.Canvas.TextFitted] does, by measuring.
+//
+// Sizes still come in steps, because whole multiples of a bitmap are all there
+// is. [FontSizes] lists them and explains what that means for a layout; the
+// short version is that the steps are 4 to 13 pixels apart, not smooth.
 //
 // It embeds nothing of its own — those faces are already linked in, because
 // this library depends on golang.org/x/image for [font.Face] regardless.
@@ -44,52 +61,115 @@ func Fonts() render.FontFamily {
 	scaled := map[int]font.Face{}
 
 	return func(size int) (font.Face, error) {
-		switch {
-		case size < inconsolataHeight:
-			return basicfont.Face7x13, nil
-		case size < 2*inconsolataHeight:
-			return inconsolata.Regular8x16, nil
+		// The largest whole multiple of any base that fits. Bases are ordered
+		// largest-first, so an exact tie goes to Inconsolata, which is the
+		// face this family has always used at 17 and above.
+		bestLH, bestBase, bestN := 0, -1, 0
+		for i, b := range bases {
+			n := size / b.lh
+			if n >= 1 && n*b.lh > bestLH {
+				bestLH, bestBase, bestN = n*b.lh, i, n
+			}
 		}
-
-		// Whole multiples only: a fractional scale would put glyph edges
-		// between pixels, which is the problem this avoids.
-		n := size / inconsolataHeight
+		if bestBase < 0 {
+			// Below the smallest face. Documented above: hand back the
+			// smallest there is and let the caller measure.
+			return basicfont.Face7x13, nil
+		}
+		if bestN == 1 {
+			return bases[bestBase].face, nil
+		}
 
 		mu.Lock()
 		defer mu.Unlock()
-		if f, ok := scaled[n]; ok {
+		if f, ok := scaled[bestLH]; ok {
 			return f, nil
 		}
-		f := render.ScaleFace(inconsolata.Regular8x16, n)
-		scaled[n] = f
+		f := render.ScaleFace(bases[bestBase].face, bestN)
+		scaled[bestLH] = f
 		return f, nil
 	}
 }
 
-// fontSizes is every distinct size [Fonts] can produce, ascending.
+// fontSizes is every distinct size [Fonts] can produce, ascending: whole
+// multiples of both bases, interleaved.
 //
-// It is the ladder, and it is short: 13 from basicfont, then whole multiples
-// of inconsolata's 17. Everything between rounds DOWN, so asking for 48 gets
-// 34 and asking for 50 also gets 34.
-//
-// The list is here rather than computed so that it reads as what it is — a
-// hard constraint on layout — and TestFontSizesMatchesTheFamily sweeps the
-// family to prove the two cannot drift apart.
-var fontSizes = []int{13, 17, 2 * inconsolataHeight, 3 * inconsolataHeight, 4 * inconsolataHeight}
+// Computed rather than written out, so it cannot disagree with the family.
+// TestFontSizesMatchesTheFamily sweeps Fonts and checks every line height it
+// produces appears here.
+var fontSizes = func() []int {
+	const limit = 80 // past any plausible panel; 78 is the last rung under it
+	seen := map[int]bool{}
+	var out []int
+	for s := 1; s <= limit; s++ {
+		for _, b := range bases {
+			if s%b.lh == 0 && !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}()
 
 // FontSizes returns the sizes [Fonts] can actually produce, ascending:
-// 13, 17, 34, 51, 68.
+// 13, 17, 26, 34, 39, 51, 52, 65, 68, 78.
 //
 // This exists because the ladder is a LAYOUT constraint, and a layout that
-// discovers it by experiment discovers it late. The gap between 34 and 51 is
-// 17 pixels wide and lands exactly where a headline wants to be: on a 400px
-// panel "WAIT IF YOU CAN" is 240px at 34 and 360px at 51, so a headline with
-// anything beside it has one usable size and not two.
+// discovers it by experiment discovers it late.
 //
-// Design to these, or supply your own face with [FontsWith]. See [Fonts] for
-// why the steps are what they are — in short, an integer-scaled bitmap stays
-// crisp on a panel with no intermediate tones and a fractionally scaled one
-// does not, so half steps are not available at any price.
+// # Why there are two typefaces in it
+//
+// The ladder used to be 13, 17, 34, 51, 68 — Inconsolata's 17 scaled, with
+// basicfont's 13 underneath it. That left a 17px hole between 34 and 51,
+// exactly where a headline wants to be, and a consumer found it the hard way
+// (issue #4): on a 400px panel "WAIT IF YOU CAN" beside "13:08" is 320px at 34
+// and 480px at 51, so there was one usable headline size and not two.
+//
+// Scaling basicfont as well fills it. The rungs interleave, the worst gap
+// halves from 17px to 13px, and 39 exists where 40 was wanted.
+//
+// The cost is that two adjacent rungs can be different typefaces — 34 is
+// Inconsolata and 39 is basicfont. That is a smaller price than it first
+// appears, and the reason is worth stating plainly: this family ALREADY mixed
+// them. It has always returned basicfont below 17 and Inconsolata above, and
+// the test card draws its own legibility ladder at 17 and 13 in the same
+// circle. Adding rungs does not put a second typeface on the panel; there were
+// always two. What changes is that a layout can now land on either.
+//
+// If that matters for a particular screen, pick one rung and stay on it — and
+// note that a size and its double are always the same face, since both come
+// from the same base.
+//
+// # The ladder is often not the real constraint
+//
+// Worth measuring before assuming a missing rung is the problem. These faces
+// are MONOSPACE, and a monospace advance is wide relative to its height, so a
+// long line runs out of width before it runs out of ladder.
+//
+// The case from issue #4 — a headline beside a clock on a 400px panel:
+//
+//	34px (Inconsolata x2)   240 + 80 = 320   fits
+//	39px (basicfont x3)     315 + 105 = 420  does not
+//	51px (Inconsolata x3)   360 + 120 = 480  does not
+//
+// So the 39 this ladder gained does not help that layout, even though it is
+// the size that was asked for. basicfont at 39 is 21px per glyph against
+// Inconsolata's 16 at 34: taller, and wider still.
+//
+// A PROPORTIONAL face does fit, at exactly the size that was wanted:
+//
+//	40px (goregular via FontsWith)  298 + 87 = 385  fits
+//
+// If a headline needs to be big AND long, that is the lever — not this ladder.
+// [FontsWith] keeps the bitmap faces for small text, where an outline genuinely
+// cannot compete, and takes yours above 17px.
+//
+// # What is still not available
+//
+// Anything between the rungs. Half-step scaling is out at any price: a 1.5x
+// face puts glyph edges between pixels, which is the whole reason these are
+// integer-scaled bitmaps in the first place.
 //
 // The result is a fresh slice; callers may sort or truncate it freely.
 func FontSizes() []int {
@@ -136,6 +216,10 @@ func LargestFontSizeFor(height int) int {
 	}
 	return best
 }
+
+// basicfontHeight is the line height of [basicfont.Face7x13], and so the step
+// between the rungs it contributes: 13, 26, 39, 52, 65.
+const basicfontHeight = 13
 
 // inconsolataHeight is the LINE height of inconsolata.Regular8x16 — ascent 14
 // plus descent 3 — and so the step between the scaled sizes [Fonts] offers.

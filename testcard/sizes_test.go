@@ -14,7 +14,10 @@ import (
 // cannot design toward a size that does not exist.
 func TestFontSizes(t *testing.T) {
 	got := testcard.FontSizes()
-	want := []int{13, 17, 34, 51, 68}
+	// Both bases, interleaved: basicfont's 13 and inconsolata's 17, each
+	// scaled by whole multiples. The 39 is the one that matters — it is the
+	// rung that was missing between 34 and 51, where a headline wants to be.
+	want := []int{13, 17, 26, 34, 39, 51, 52, 65, 68, 78}
 	if len(got) != len(want) {
 		t.Fatalf("FontSizes() = %v, want %v", got, want)
 	}
@@ -73,8 +76,11 @@ func TestLargestFontSizeFor(t *testing.T) {
 		height int
 		want   int
 	}{
-		{200, 68}, {68, 68}, {67, 51}, {51, 51}, {50, 34},
-		{34, 34}, {33, 17}, {17, 17}, {16, 13}, {13, 13},
+		{200, 78}, {78, 78}, {77, 68}, {68, 68}, {67, 65}, {65, 65},
+		{64, 52}, {52, 52}, {51, 51}, {50, 39},
+		// The point of the whole exercise: a 40px band now yields 39, not 34.
+		{40, 39}, {39, 39}, {38, 34}, {34, 34}, {33, 26}, {26, 26},
+		{25, 17}, {17, 17}, {16, 13}, {13, 13},
 		{12, 0}, {0, 0}, {-1, 0},
 	} {
 		if got := testcard.LargestFontSizeFor(tc.height); got != tc.want {

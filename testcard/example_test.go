@@ -79,9 +79,10 @@ func ExampleFonts() {
 	}
 	fmt.Println("10px line height:", render.LineHeight(small))
 
-	// Large sizes are the same face integer-scaled, so a heading is exactly
-	// as crisp as the body text. Sizes come in steps, and what comes back is
-	// never taller than what was asked for.
+	// Large sizes are a hand-drawn face integer-scaled, so a heading is
+	// exactly as crisp as the body text. Sizes come in steps, and what comes
+	// back is never taller than what was asked for — so asking for the height
+	// of a box is the same as asking for the largest face that fits it.
 	big, err := fonts(48)
 	if err != nil {
 		log.Fatal(err)
@@ -89,5 +90,5 @@ func ExampleFonts() {
 	fmt.Println("48px gives a face of height:", render.LineHeight(big))
 	// Output:
 	// 10px line height: 13
-	// 48px gives a face of height: 34
+	// 48px gives a face of height: 39
 }

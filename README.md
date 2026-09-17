@@ -228,20 +228,27 @@ rather than buried in a doc comment. `testcard.Fonts()` can produce exactly
 five sizes:
 
 ```
-13   17   34   51   68        testcard.FontSizes()
+13  17  26  34  39  51  52  65  68  78        testcard.FontSizes()
 ```
 
-Everything between rounds **down**: asking for 48 gets you 34, and so does
-asking for 50. There is no 40.
+Those are whole multiples of two hand-drawn faces — Inconsolata's 17 and
+basicfont's 13 — interleaved. Everything between rounds **down**.
 
-That matters most for headlines, because the 34→51 gap is 17px wide and lands
-where a headline wants to be. On a 400px panel:
+**But check whether the ladder is actually your constraint.** These faces are
+monospace, and a monospace advance is wide for its height, so a long line runs
+out of width before it runs out of ladder. A headline beside a clock on a 400px
+panel:
 
-| | at 34px | at 51px |
-|---|---|---|
-| `WAIT IF YOU CAN` | 240px | 360px |
-| `13:08` | 80px | 120px |
-| both, side by side | **320px — fits** | **480px — cannot fit** |
+| | headline | clock | total |
+|---|---|---|---|
+| 34px, Inconsolata ×2 | 240px | 80px | **320 — fits** |
+| 39px, basicfont ×3 | 315px | 105px | 420 — no |
+| 51px, Inconsolata ×3 | 360px | 120px | 480 — no |
+| **40px, proportional via `FontsWith`** | 298px | 87px | **385 — fits** |
+
+If a headline must be big *and* long, the lever is a proportional face, not a
+denser ladder. `FontsWith` keeps the bitmaps for small text — where an outline
+genuinely cannot compete — and takes yours above ~17px.
 
 So a headline with anything beside it has one usable size on that panel, not
 two. Decide which step you are designing to before you lay the screen out.
