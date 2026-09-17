@@ -244,12 +244,24 @@ where a headline wants to be. On a 400px panel:
 | both, side by side | **320px — fits** | **480px — cannot fit** |
 
 So a headline with anything beside it has one usable size on that panel, not
-two. Decide which step you are designing to before you lay the screen out, and
-ask rather than guess:
+two. Decide which step you are designing to before you lay the screen out.
+
+**In drawing code, do not name the sizes at all.** A `FontFamily` is required
+to round down, so asking for the height you have already gets you the largest
+face that fits:
 
 ```go
-size := testcard.LargestFontSizeFor(boxHeight)   // 0 if nothing fits
+f, err := ff(band.Dy() - padding)   // whatever fits, whoever supplied ff
 ```
+
+That works for any family, including one your caller supplied and you have
+never seen, and it degrades sensibly on a panel your layout was not designed
+for. Naming a size instead hardcodes one family into code that looks generic.
+
+`testcard.FontSizes()` and `LargestFontSizeFor()` are for **tests** and for
+inspecting a family — where knowing the ladder is the whole point. "This
+headline uses 34 and the next rung up cannot fit beside the clock" is a good
+regression test, and it starts failing the day the ladder gains a rung.
 
 **Half steps are not on the table.** A 1.5× face would put glyph edges between
 pixels, which is the entire reason these are integer-scaled bitmaps — see

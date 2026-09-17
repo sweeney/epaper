@@ -248,6 +248,14 @@ func (c *Canvas) Line(a, b image.Point, i epaper.Ink) {
 // endpoint, and the square stamped there fills the wedge that would otherwise
 // be a notch on the outside of the turn. Draw a curve as a sequence of these
 // and the corners look after themselves.
+//
+// # When not to use it
+//
+// If every segment is axis-aligned — a step chart, a bar, a rule — use
+// [Canvas.Rect] instead. Rect is exact, has no bias to think about, and says
+// what it means. The consumer who asked for weighted lines went and checked,
+// found their price curve was a step, and kept Rect; the honest summary is
+// that this earns its place on diagonals and polyline joins and nowhere else.
 func (c *Canvas) LineWeight(a, b image.Point, i epaper.Ink, weight int) {
 	idx, ok := c.ink(i)
 	if !ok {
