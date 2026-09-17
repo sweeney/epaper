@@ -226,6 +226,73 @@ func (c *Canvas) Line(a, b image.Point, i epaper.Ink) {
 	}
 }
 
+// LineWeight draws a line of the given weight in pixels, both endpoints
+// included. A weight of 1 is exactly [Canvas.Line]; below 1 draws nothing.
+//
+// The rule, specified in testdata/README.md: the union of a weight x weight
+// square stamped on every pixel of the 1px Bresenham line. That has two
+// consequences worth knowing before using it.
+//
+// An EVEN weight cannot be centred on a pixel grid, so it sits half a pixel
+// right and down of the line. Biasing consistently beats rounding one way at
+// one end and the other way at the other; if you want symmetry, use an odd
+// weight.
+//
+// A DIAGONAL reads slightly heavier than an axis-aligned line of the same
+// weight, because a square stamp is a constant Chebyshev radius: the band
+// across a 45-degree line is about weight*sqrt(2) wide. Fixing that needs a
+// distance test in real arithmetic, which is precisely the unportable
+// rasteriser this package refuses to depend on — see PLAN §9.8.
+//
+// In exchange, joins are free: consecutive segments of a polyline share an
+// endpoint, and the square stamped there fills the wedge that would otherwise
+// be a notch on the outside of the turn. Draw a curve as a sequence of these
+// and the corners look after themselves.
+func (c *Canvas) LineWeight(a, b image.Point, i epaper.Ink, weight int) {
+	idx, ok := c.ink(i)
+	if !ok {
+		return
+	}
+	if weight < 1 {
+		// Not an error: a caller computing a weight from data can reasonably
+		// arrive at zero, and drawing a hairline instead would be inventing
+		// an intent they did not express.
+		return
+	}
+	if weight == 1 {
+		c.Line(a, b, i)
+		return
+	}
+
+	// Integer division, so an even weight is biased right and down. See the
+	// doc comment: this is the documented behaviour, not a rounding accident.
+	lo, hi := (weight-1)/2, weight/2
+
+	dx, sx := abs(b.X-a.X), sign(b.X-a.X)
+	dy, sy := -abs(b.Y-a.Y), sign(b.Y-a.Y)
+	err := dx + dy
+	x, y := a.X, a.Y
+	for {
+		for py := y - lo; py <= y+hi; py++ {
+			for px := x - lo; px <= x+hi; px++ {
+				c.setIndex(px, py, idx)
+			}
+		}
+		if x == b.X && y == b.Y {
+			return
+		}
+		e2 := 2 * err
+		if e2 >= dy {
+			err += dy
+			x += sx
+		}
+		if e2 <= dx {
+			err += dx
+			y += sy
+		}
+	}
+}
+
 // Ellipse fills the ellipse inscribed in a rectangle, touching each side at
 // exactly one point.
 //

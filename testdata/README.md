@@ -169,6 +169,24 @@ loop:
 line by a pixel, so the argument order in `tools/conformance.py` is part of the
 fixture.
 
+**Thick line**, weight `w >= 1`: the union of a `w x w` square stamped on every
+pixel of the 1px Bresenham line above. The square for a point `(x,y)` runs from
+`(x - (w-1)/2, y - (w-1)/2)` to `(x + w/2, y + w/2)` inclusive, with integer
+division, so `w = 1` is the single pixel and an even weight sits half a pixel
+right and down of centre — there is no honest way to centre an even width on a
+pixel grid, and biasing consistently beats rounding differently at each end.
+
+Two consequences, both deliberate and neither a bug:
+
+- A diagonal reads slightly heavier than an axis-aligned line of the same
+  weight. Stamping squares gives a constant *Chebyshev* radius, so the band
+  perpendicular to a 45-degree line is about `w * sqrt(2)` wide, not `w`.
+  Correcting it would mean a distance test in real arithmetic, which is exactly
+  the unportable rasteriser this file exists to avoid.
+- Joins between segments of a polyline need no special case. Consecutive
+  segments share an endpoint, and the square stamped there fills the wedge that
+  would otherwise be a notch on the outside of the turn.
+
 **Convex polygon fill**, by half-space test. For each edge `a -> b` the edge
 function
 
