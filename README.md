@@ -221,6 +221,56 @@ misdiagnose.
 [`render.FontFamily`](https://pkg.go.dev/github.com/sweeney/epaper/render#FontFamily)
 for the details, including why `font.HintingFull` does not help.
 
+### Sizes come in steps — design to them
+
+The consequence lands on **layout**, not on text quality, so it belongs here
+rather than buried in a doc comment. `testcard.Fonts()` can produce exactly
+five sizes:
+
+```
+13   17   34   51   68        testcard.FontSizes()
+```
+
+Everything between rounds **down**: asking for 48 gets you 34, and so does
+asking for 50. There is no 40.
+
+That matters most for headlines, because the 34→51 gap is 17px wide and lands
+where a headline wants to be. On a 400px panel:
+
+| | at 34px | at 51px |
+|---|---|---|
+| `WAIT IF YOU CAN` | 240px | 360px |
+| `13:08` | 80px | 120px |
+| both, side by side | **320px — fits** | **480px — cannot fit** |
+
+So a headline with anything beside it has one usable size on that panel, not
+two. Decide which step you are designing to before you lay the screen out, and
+ask rather than guess:
+
+```go
+size := testcard.LargestFontSizeFor(boxHeight)   // 0 if nothing fits
+```
+
+**Half steps are not on the table.** A 1.5× face would put glyph edges between
+pixels, which is the entire reason these are integer-scaled bitmaps — see
+`render.FontFamily`. The escape hatch is `testcard.FontsWith`, which takes your
+own TrueType face above ~17px; note that it leaves the small sizes as bitmaps,
+so you get a mixed aesthetic unless you commit to it deliberately.
+
+### Text that does not fit: three answers
+
+Pick by what you want to give: the size, the line count, or the words.
+
+| | Behaviour | Use when |
+|---|---|---|
+| `Canvas.TextFitted` | shrinks the text until it fits | the box is fixed and the text must all show |
+| `Canvas.TextWrapped` | runs onto more lines, clips, **records an error** | the width is fixed and there is vertical room |
+| `Canvas.TextTruncated` | cuts at a fixed size and adds `...` | a dashboard: the size must not change between refreshes |
+
+`TextTruncated` deliberately does **not** record an error, unlike the other
+two. An ellipsis is visible on the glass, so the viewer can see something was
+cut — which is the job the error does for text that silently vanishes.
+
 ## Try it
 
 ```bash

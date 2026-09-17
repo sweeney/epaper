@@ -185,8 +185,14 @@ whole rule.
 ## Adding a drawing primitive
 
 `render` primitives must be specified, not inherited. Write the rule down in
-`testdata/README.md` in integer arithmetic, the way the ellipse, line and
-polygon rules are, and implement from the specification.
+`testdata/README.md` in integer arithmetic, the way the ellipse, line, thick
+line and polygon rules are, and implement from the specification.
+
+Write down the consequences you are choosing, too, not just the algorithm. The
+thick-line rule says outright that a diagonal reads heavier than an
+axis-aligned line of the same weight, and that an even weight is biased right
+and down. Both are real and neither is a bug; a reader who finds them on a
+panel without finding them in the spec will reasonably file one.
 
 This matters because the alternative was tried and rejected: the conformance
 fixture originally drew its geometry with PIL's rasterisers, which are exactly

@@ -264,8 +264,10 @@ func WrapText(s string, f font.Face, width int) []string {
 // but you are told, because on e-ink nobody is watching at the moment it
 // happens.
 //
-// Use [Canvas.TextFitted] instead when the text must all appear and the size
-// may give; use this when the size is fixed and the text may run on.
+// There are three answers to "the text does not fit", and they differ in what
+// gives: [Canvas.TextFitted] gives the size, this gives the line count, and
+// [Canvas.TextTruncated] gives the words. A dashboard usually wants the last —
+// text that resizes itself between refreshes makes a screen look broken.
 func (c *Canvas) TextWrapped(r image.Rectangle, s string, f font.Face, i epaper.Ink) int {
 	if _, ok := c.ink(i); !ok {
 		return 0
