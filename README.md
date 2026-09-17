@@ -283,6 +283,14 @@ Sizing against the *current* text instead makes a headline resize when the
 words change, which looks like a fault on a panel that refreshes every few
 minutes. Use `Canvas.TextTruncated` for anything that still runs long.
 
+**`FittedSize` fits one string.** A box with two elements — a headline and a
+right-aligned clock sharing one width — is circular: the room for the headline
+depends on the clock's width, which depends on the face being chosen. Measuring
+them concatenated breaks the circle and is wrong in the *unsafe* direction,
+because kerning applies at the join in the measurement but not on the panel
+where they are drawn separately. Search both axes yourself; it is a dozen
+lines, and `FittedSize`'s doc has the shape.
+
 `testcard.FontSizes()` and `LargestFontSizeFor()` are for **tests** and for
 inspecting a family — where knowing the ladder is the whole point. "This
 headline uses 34 and the next rung up cannot fit beside the clock" is a good

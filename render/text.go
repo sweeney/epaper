@@ -217,6 +217,41 @@ func (c *Canvas) TextFitted(r image.Rectangle, s string, ff FontFamily, i epaper
 // FittedSize reports the largest size at which s fits in r, and the face at
 // that size, without drawing anything.
 //
+// # It fits ONE string
+//
+// A box holding more than one element still needs its own search, and the
+// arithmetic does not decompose. A status bar with a headline on the left and
+// a right-aligned clock on the right is two strings sharing one width: the
+// room available to the headline is r.Dx() minus the clock's width, and the
+// clock's width depends on the face, which is what is being chosen. Circular.
+//
+// Measuring "headline + gap + clock" as one concatenated string breaks the
+// circle and is subtly WRONG, in the unsafe direction. Kerning applies at the
+// join in the measurement but not on the panel, where the two are drawn by
+// separate calls — so the concatenation can measure narrower than the layout
+// really is, and a fit check passes for something that overflows. Measured: Go
+// Regular at 40px kerns "...T" against "o..." one pixel tighter joined than
+// apart. The bundled monospace faces kern nothing, so this cannot bite until
+// someone brings their own face, which is exactly when it is hardest to spot.
+//
+// Search both axes explicitly instead, which is a dozen lines and states the
+// real constraint:
+//
+//	for size := maxHeight; size >= minUseful; size-- {
+//		f, err := ff(size)
+//		if err != nil || LineHeight(f) > maxHeight {
+//			continue
+//		}
+//		if MeasureText(widestLeft, f)+MeasureText(widestRight, f) <= maxWidth {
+//			return f
+//		}
+//	}
+//
+// Note "widest", not "current", in both. Size once against the widest strings
+// the screen can ever show, or the type changes size when the news does, which
+// reads as a fault. A consumer arrived at this independently and it is their
+// code (issue #4).
+//
 // It is what [Canvas.TextFitted] uses to choose a size, exposed separately for
 // callers that need to know whether text will fit before committing to it.
 // TextFitted deliberately fails loudly when nothing fits — silently shrinking
