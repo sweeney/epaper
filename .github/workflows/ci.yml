@@ -143,6 +143,11 @@ jobs:
         run: go test ./inky -run FuzzParseEEPROM -fuzz FuzzParseEEPROM -fuzztime 45s
       - name: fuzz the framebuffer packer
         run: go test . -run FuzzPack -fuzz FuzzPack -fuzztime 45s
+      # The E640 translates as it packs — its wire values skip 4 — and walks
+      # the image in rotated order, so it gets its own run rather than being
+      # covered by FuzzPack.
+      - name: fuzz the E640 frame builder
+        run: go test ./driver/e640 -run FuzzFrame -fuzz FuzzFrame -fuzztime 45s
       - name: upload crashers
         if: failure()
         uses: actions/upload-artifact@v7

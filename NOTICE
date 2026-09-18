@@ -15,6 +15,10 @@ independent discoveries:
   - The JD79661 initialisation and refresh command sequences, every payload
     constant in them, and its rotated-and-padded frame layout
     (driver/jd79661).
+  - The E640 initialisation and refresh command sequences, every payload
+    constant in them, its colour codes and their remap, its preview
+    renditions of the chromatic inks, and its rotated four-bit frame layout
+    (driver/e640).
   - The panel reset timing.
   - The 2-bits-per-pixel framebuffer packing expression.
   - The EEPROM record layout, its colour table and its display-variant table

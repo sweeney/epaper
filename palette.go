@@ -22,16 +22,22 @@ type Entry struct {
 //
 // # Order is wire-significant
 //
-// A palette's slice position IS the index sent to the controller. Element 0 is
-// the byte value 0 on the wire, element 1 the value 1, and so on. Reordering a
-// driver's palette — to sort it, to tidy it, to group the accent inks — would
-// silently swap the colours on the panel, and every test would still pass
-// unless one pins the order. Drivers should pin theirs.
+// A palette's slice position is the index an image stores for that ink, and
+// the driver sends the controller a value determined by it. For most drivers
+// the two are the same number — element 0 is the byte value 0 on the wire,
+// element 1 the value 1, and so on. A controller whose colour codes are not
+// contiguous gets a fixed translation in its driver instead: the E640 skips 4,
+// so its fifth and sixth inks go over the wire as 5 and 6. Either way,
+// reordering a driver's palette — to sort it, to tidy it, to group the accent
+// inks — would silently swap the colours on the panel, and every test would
+// still pass unless one pins the order. Drivers should pin theirs.
 //
 // Use [Palette.Index] to resolve an ink; never write an integer index by hand.
 type Palette []Entry
 
-// Index returns the wire index for an ink, and whether this palette has it.
+// Index returns the palette index for an ink, and whether this palette has it.
+// That is the value to store in an image; see "Order is wire-significant"
+// above for how it relates to what the controller receives.
 //
 // When the ink is absent the returned index is 0 and ok is false. Do not use
 // the index in that case — 0 is a real, usable index (typically black), so a
