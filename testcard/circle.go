@@ -240,9 +240,14 @@ func longestPrefixThatFits(s string, f font.Face, width int) int {
 func fitLine(c *render.Canvas, l layout, fonts render.FontFamily, y, height int, s string, ink epaper.Ink) int {
 	half := l.inscribedHalfWidth(maxAbs(y-l.circleY, y+height-l.circleY))
 	box := image.Rect(l.circleX-half, y, l.circleX+half, y+height)
-	if _, _, err := render.FittedSize(box, s, fonts); err != nil {
+	_, face, err := render.FittedSize(box, s, fonts)
+	if err != nil {
 		return y
 	}
-	c.TextFitted(box, s, fonts, ink)
+	// Centred, not TextFitted: that draws at the box's left, which only
+	// looks centred when the fitted size happens to fill the disc's width.
+	// On the Impression the height caps the size first, and the heading sat
+	// 14px left of centre.
+	c.TextAligned(box, s, face, ink, render.AlignCentre)
 	return y + height
 }
