@@ -46,6 +46,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"slices"
 
 	"github.com/sweeney/epaper"
 )
@@ -111,6 +112,13 @@ func (c *Canvas) Err() error { return c.err }
 
 // Bounds returns the canvas's geometry.
 func (c *Canvas) Bounds() image.Rectangle { return c.img.Bounds() }
+
+// Palette returns the inks this canvas draws in, in the panel's order.
+//
+// It is for drawings that adapt to the panel: a test card that paints the
+// colour bars where the panel has the inks for them, and luminance steps where
+// it does not. The result is a copy, so it can be sorted or trimmed freely.
+func (c *Canvas) Palette() epaper.Palette { return slices.Clone(c.palette) }
 
 // ink resolves an ink to its wire index, recording a sticky error if the
 // palette does not have it. It reports false if drawing should not proceed,
