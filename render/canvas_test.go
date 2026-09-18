@@ -50,6 +50,28 @@ func TestNewCanvasForTakesGeometryFromTheDevice(t *testing.T) {
 	}
 }
 
+// A drawing that adapts to the panel — a card that uses green where there is
+// green — has to be able to ask. And what it gets back must not be a handle
+// on the canvas's own palette, or tidying the answer would re-map the canvas.
+func TestPaletteReportsTheCanvasInks(t *testing.T) {
+	c := newCanvas(4, 4)
+	got := c.Palette()
+	if len(got) != len(fourInk) {
+		t.Fatalf("Palette() has %d entries, want %d", len(got), len(fourInk))
+	}
+	for i := range fourInk {
+		if got[i] != fourInk[i] {
+			t.Errorf("Palette()[%d] = %v, want %v", i, got[i], fourInk[i])
+		}
+	}
+
+	got[0], got[1] = got[1], got[0]
+	c.Fill(epaper.Black)
+	if at(t, c, 0, 0) != black {
+		t.Error("reordering the returned palette changed what the canvas draws")
+	}
+}
+
 func TestFill(t *testing.T) {
 	c := newCanvas(4, 2)
 	c.Fill(epaper.Red)
