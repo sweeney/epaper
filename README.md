@@ -2,7 +2,6 @@
 
 [![ci](https://github.com/sweeney/epaper/actions/workflows/ci.yml/badge.svg)](https://github.com/sweeney/epaper/actions/workflows/ci.yml)
 [![go reference](https://pkg.go.dev/badge/github.com/sweeney/epaper.svg)](https://pkg.go.dev/github.com/sweeney/epaper)
-[![go report card](https://goreportcard.com/badge/github.com/sweeney/epaper)](https://goreportcard.com/report/github.com/sweeney/epaper)
 
 A Go library for driving e-ink panels from a Raspberry Pi.
 
