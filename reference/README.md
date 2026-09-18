@@ -5,16 +5,19 @@ Third-party source, kept for reference. **Not part of the build** — nothing in
 
 ## `vendor-inky/`
 
-Four files from Pimoroni's `inky` Python library, version **2.5.0**. The first
+Five files from Pimoroni's `inky` Python library, version **2.5.0**. The first
 three were taken from the Pi at
 `~/inky-trial/venv/lib/python3.13/site-packages/inky/`; `inky_jd79661.py` came
 from the 2.5.0 sdist on PyPI, verified by diffing its `inky_jd79668.py` against
-our copy — byte for byte identical, so it is the same release.
+our copy — byte for byte identical, so it is the same release. `inky_e640.py`
+came from the same sdist on 2026-09-25, and all four files already here were
+diffed against it again: byte-identical.
 
 | File | Why it is here |
 |---|---|
 | `inky_jd79668.py` | **The authority** for the wHAT 4.2": command sequence, payload constants, pin assignments, reset timing and the packing expression. Every magic number in `driver/jd79668` traces back to this file |
 | `inky_jd79661.py` | **The authority** for the pHAT 2.13", the same way, for `driver/jd79661`. A different controller, not a variant: a different init sequence, and a frame layout that is rotated and padded rather than plain row-major |
+| `inky_e640.py` | **The authority** for the Impression 4.0" Spectra 6, for `driver/e640`: six inks at four bits a pixel, colour codes that skip 4 (see `set_image()`'s remap), and a frame rotated like the JD79661's but unpadded |
 | `eeprom.py` | The EEPROM struct layout, the colour table and the display-variant table |
 | `auto.py` | How detection maps an EEPROM record to a driver |
 
@@ -45,6 +48,7 @@ Two things in here are deliberately **not** copied into our implementation, and
 the reasons are in `PLAN.md`:
 
 - `_send_command` sleeps 300 ms before *every* command (~4.8 s per refresh).
-  Whether that is load-bearing is PLAN §9.3, to be measured before M6.
+  Whether that is load-bearing is PLAN §9.3, to be measured before M6. The
+  E640's copy is the same line; PLAN §14.4 measured that one too.
 - `_busy_wait` sleeps the full 40 s timeout when BUSY reads high on entry. We
   return an error instead — see PLAN §2.3.
