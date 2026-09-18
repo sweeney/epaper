@@ -29,6 +29,11 @@ const (
 //
 // A 400x300 panel packs to exactly 30,000 bytes.
 //
+// This is the four-ink controllers' format, and Pack is what their drivers use
+// or mirror. It is not every panel's: the E640 packs four bits a pixel and
+// translates as it goes, so its driver builds its own frame and a six-ink
+// image is refused here with [ErrPaletteTooLarge] rather than truncated.
+//
 // Pack refuses an image it cannot represent faithfully rather than masking the
 // index and drawing the wrong colour: more than four palette entries returns
 // [ErrPaletteTooLarge], and a pixel whose index is not defined by its own
