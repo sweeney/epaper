@@ -92,7 +92,11 @@ Adding one should be a new package plus one line. Concretely:
   That is the whole reason the command sequence can be tested with no Pi.
 - declare its own `Palette`. **Slice position is the wire index** — element 0
   is the byte value 0 the controller receives. Pin the order in a test;
-  reordering it for tidiness would silently swap every panel's colours.
+  reordering it for tidiness would silently swap every panel's colours. If the
+  controller's colour codes are not contiguous, as the E640's are not (it
+  skips 4), keep the palette dense and translate in the driver through one
+  fixed table, pinned per ink by what reaches the frame —
+  `driver/e640.TestWireValuesSkipFour` is the model.
 - cite its origin. Every magic number needs a comment naming the file it came
   from, and the vendor source should be added under `reference/`.
 - serialise `Show` with a mutex, and validate the image *before* anything
@@ -128,10 +132,18 @@ Four differently-inked corners and an arrow, so all eight ways of being wrong
 look different. This is the only check that catches a rotation or a flip, and
 it costs one refresh.
 
+Then **the inks card**, `PATTERN=inks`: every ink as a solid swatch beside its
+name. It is the only check that catches a wrong wire value, which draws a tidy
+card with the wrong colour in a labelled square. Then the test card, and look
+at all of it — the heading on the test card was left of centre for as long as
+nobody had drawn it on a panel wide enough to show it.
+
 **6. If it needs more than that, abstract then — not now.** There is
-deliberately no driver registry and no capability negotiation. Two controllers
-in, the only thing that has been worth abstracting is the supported-panel list,
-and that was because three separate places needed to iterate it.
+deliberately no driver registry and no capability negotiation. Three
+controllers in, the only thing that has been worth abstracting is the
+supported-panel list, and that was because three separate places needed to
+iterate it. It now carries each panel's palette too, because the goldens were
+rendering every panel in one hardcoded four-ink palette.
 
 ### What the second controller actually cost
 
@@ -144,6 +156,25 @@ including the colour string and the PCB revision, is identical.
 
 `driver/jd79661.TestInitIsNotTheJD79668Sequence` exists to stop a future
 tidy-up from merging them. Do not delete it.
+
+### What the third controller cost
+
+The E640 (Impression 4.0" Spectra 6) shares nothing with the JD drivers but
+the pin map and the shape of `Show`, and it still cost exactly one package and
+one case, as step 4 says. What it surfaced were assumptions *above* the
+driver, each true only because every earlier panel happened to agree:
+
+- **that palette position is the wire value.** It is not when the colour
+  codes skip one. The fix is a table in the driver, not a hole in the palette.
+- **that the EEPROM's geometry is the picture's.** This one records its
+  controller's portrait frame. The board package swaps it, and the tests now
+  compare `SupportedPanels` with what `OpenWith` presents rather than with the
+  raw record.
+- **that every panel has the same four inks.** The goldens and the command's
+  offline renders used one hardcoded palette; `inky.Panel` carries each
+  panel's own now.
+
+`PLAN.md` §14 has the whole account.
 
 ## Orientation
 

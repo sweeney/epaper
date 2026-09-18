@@ -5,7 +5,8 @@ A Go library for driving e-ink panels from a Raspberry Pi.
 **Status:** M0–M9 complete. The library drives the panel end to end: the test
 card and the conformance pattern both draw on the wHAT in ~20.5 s, and the
 conformance pattern is reproduced byte for byte in software with no hardware
-present.
+present. Two more panels have been added since, each with its own section: the
+pHAT 2.13" (§13) and the six-ink Impression 4.0" Spectra 6 (§14).
 
 This document remains the contract for what was built and why; §9 records the
 decisions taken along the way, including three places where the plan was wrong
@@ -1389,3 +1390,174 @@ the system Python is untouched because it is not ours to remove.
 The full hardware suite was re-run afterwards and passes, which is the useful
 part: **the library never depended on it.** No Python is needed to drive a
 panel, only to regenerate a fixture.
+
+---
+
+## 14. The third panel: Inky Impression 4.0" Spectra 6 (E640)
+
+Added 2026-09-25, on the same Pi Zero 2 W as §13 with the pHAT unplugged. The
+board reports display variant **25**, `Spectra 6 4.0 600 x 400 (E640)`, colour
+6 (`spectra6`), PCB v10.0, written `2026-04-19 07:18:51.9` — see
+`testdata/eeprom/impression-e640.bin`, cross-checked against the vendor's own
+`eeprom.read_eeprom()` on the Pi.
+
+The vendor source is `reference/vendor-inky/inky_e640.py`, from the 2.5.0 sdist
+on PyPI — the same release as the other four files, verified by diffing them:
+all four are byte-identical.
+
+### 14.1 What is different, and what is not
+
+| | JD79668 (wHAT) | JD79661 (pHAT) | E640 (Impression) |
+|---|---|---|---|
+| Inks | 4 | 4 | **6** |
+| Bits per pixel | 2 | 2 | **4**, high nibble first |
+| Wire values | 0–3 | 0–3 | **0, 1, 2, 3, 5, 6** — skips 4 |
+| Frame | row-major | rotated, padded | **rotated, unpadded** |
+| `TRES` | 400x300 | 128x250 | **400x600** |
+| Frame size | 30,000 B | 8,000 B | **120,000 B** |
+| Init commands | 11 | 15 | 13, starting with an unnamed `0xAA` |
+| Refresh | `DTM PON DRF POF DSLP` | same | `DTM PON` **`BTST2`** `DRF POF` — no `DSLP` |
+| Wait after reset | none | none | **yes** — the vendor waits there |
+| EEPROM geometry | 400x300 | 250x122 | **400x600**, portrait |
+| Refresh, measured | 20.5 s | 18.5 s | **20.3–20.8 s** |
+
+Nothing is shared with the JD drivers but the shape of `Show` and the pin map
+(`RESET 27, BUSY 17, DC 22, CS 8`, identical in all three vendor files). So it
+is a third driver package, `driver/e640`, and one more case in
+`inky.driverFor`, which is what CONTRIBUTING said it would cost.
+
+### 14.2 The palette is not the wire
+
+Every other driver's palette position is the value sent. The E640's colour
+codes skip 4 — the vendor's `set_image()` remaps with
+`numpy.array([0, 1, 2, 3, 5, 6])` and a comment, "missing colour 4" — so the
+library-wide rule needed an exception, and it got the narrowest one possible:
+
+- `e640.Palette` is in the vendor's order (black, white, yellow, red, blue,
+  green), which is the order an image stores.
+- A fixed `wireValue` table inside the driver translates as it packs. Nothing
+  above the driver sees the gap.
+- `epaper.Palette`'s documentation now says "determined by", not "is", and
+  names this case.
+
+`TestWireValuesSkipFour` pins each ink by what arrives in the frame, and
+`TestDrawInks` on the hardware is the check a byte test cannot make: a swatch
+beside its label, read by a person.
+
+### 14.3 The frame, pinned against the vendor
+
+`Inky.show()` is `numpy.rot90(buf, -1)`, flatten, then
+`((buf[::2] << 4) & 0xF0) | (buf[1::2] & 0x0F)`. Index by index that is §13.2's
+rule without the padding:
+
+```
+controller (cx, cy)  <-  image (x = cy, y = H-1-cx)
+```
+
+`tools/frame_e640.py` captures `testdata/frame/e640-frame.{idx,bin}` from the
+real library on the Pi, and — unlike the JD79661 tool — goes **through
+`set_image()`**, so the fixture pins the remap as well as the rotation and the
+nibble order. That route quantises with Pillow, which is only safe because the
+input uses exactly the vendor's six `DESATURATED_PALETTE` colours and
+`saturation=0` makes the quantisation palette those same colours: nothing for
+Floyd-Steinberg to diffuse. The script does not trust that; it checks the
+vendor's buffer is the input with the remap applied and nothing else, and
+refuses to write the fixture otherwise. It passed.
+
+`TestFrameMatchesTheVendorOracle` is byte-identical first time. Per
+CONTRIBUTING, that was then broken on purpose five ways — remap removed, nibbles
+swapped, rotation reversed, blue sent as 4, the second `BTST2` "tidied" to match
+the first — and each is caught, by the oracle and by a targeted test.
+
+### 14.4 Delays: measured, not inherited
+
+The vendor sleeps in two places this driver does not.
+
+- **300 ms before every command**, as in every vendor driver (§9.3). Dropped.
+- **After reset**, `setup()` calls `_busy_wait(0.3)`, which sleeps the whole
+  0.3 s if BUSY is already high. On this controller BUSY **reads 1 throughout
+  the reset pulse** (`TestBusyProbe`: before=1, during=1, after=1) — unlike the
+  JD boards in §2.3 — so the vendor always takes the full sleep. The driver
+  keeps the wait, because the vendor has one there, but not the sleep; the wait
+  returns at once.
+
+Neither turned out to be load-bearing. With both gone: fifteen refreshes on
+2026-09-25 across four cards without an error, every one inspected on the
+glass correct, and an eight-refresh soak at 20.26–20.84 s with a 578 ms spread.
+The soak alternated between those two figures run to run; it is not the card,
+since the suite's own conformance refresh took 20.26 s. No refresh returned
+early, which is what §2.3 warns a stale ready would look like; the 1 s
+too-fast check stays on.
+
+**One unexplained number:** the first refresh this library ever gave the panel
+took **34.2 s**. Nothing since has taken more than 20.9 s. It may be the
+panel's first-use or temperature behaviour, or something about the state it
+was shipped in; one sample cannot say. `DefaultBusyTimeout` is the vendor's
+40 s, which covered it, though not with much room. If it recurs, that is the
+number to raise.
+
+### 14.5 The EEPROM's geometry is the controller's
+
+The record says 400x600. The vendor ignores it: `auto.py` passes
+`resolution=(600, 400)`, and the variant's own name reads 600 x 400. Passing
+the EEPROM through would hand callers a portrait canvas and a driver that turns
+it a second time. So `inky.driverFor` swaps the two for this variant, with a
+comment saying why, and the tests that compared `SupportedPanels` to the raw
+EEPROM now compare it to what `OpenWith` actually presents
+(`TestSupportedPanelsMatchWhatTheRealBoardsOpenAs`).
+
+`inky.Panel` also gained a `Palette`, because the goldens and
+`epaper-testcard -png` rendered every panel in one hardcoded four-ink palette.
+That was harmless while every panel had the same four inks, and wrong the moment
+one did not.
+
+### 14.6 The cards
+
+- **Test card.** Where the canvas has blue *and* green, the side ladders are
+  Test Card F's actual colour bars — white, yellow, cyan, green, magenta, red,
+  blue, black — with cyan and magenta as 1px checkers, and the disc's accent
+  strip gains green and blue. The four-ink card is untouched: every existing
+  golden passed unchanged. `render.Canvas.Palette()` was added so a drawing
+  can ask what it has.
+- **Inks card**, new: every ink as a solid swatch beside its name, every pair
+  mixed (1px checker above the diagonal, 50% dither below). It exists for
+  §14.2 and runs in the hardware suite on every panel.
+- **Conformance.** It is 400x300 by construction (§2's fixture). On the
+  Impression it filled the top-left and left the rest white, and on the glass
+  that read as a pattern drawn a third too small — reported by the person
+  looking at it, which is the point of looking. A larger panel now gets its
+  margin dithered and ruled off; the 400x300 region is untouched and a test
+  says so.
+- **The heading was never centred.** `fitLine` drew it with `TextFitted`,
+  which places text at the box's left, in a box as wide as the disc. On the
+  wHAT the fitted size nearly fills that box, so it looked centred; on the
+  Impression the height caps the size first and it sat 14px left — which the
+  person at the panel spotted at once. It is now `TextAligned` with
+  `AlignCentre`, pinned by `TestHeadingIsCentredInTheDisc`. That moves the
+  wHAT's heading a few pixels too: its golden changes in the heading's ten
+  rows and nowhere else. It has not been redrawn on the wHAT itself.
+
+Verified on the glass on 2026-09-25: orientation card correct in every
+corner; all six inks in their labelled rows; conformance margin reads as
+intended; the test card right, heading included, after the fix above; the full
+hardware suite passes. `TestLayoutIsUnchangedOnTheRealPanels` now pins the
+600x400 layout as reviewed.
+
+### 14.7 Still open
+
+- **Preview colours are not measured.** The chromatic inks use the vendor's
+  `SATURATED_PALETTE`, which is Pimoroni's rendition, not a measurement of our
+  panel. Black and white are kept pure. They affect PNGs only.
+- **No deep sleep.** The vendor never sends `DSLP` to this controller, so
+  neither do we. Whether the panel draws power between refreshes because of it
+  has not been measured.
+- **The 34 s refresh** in §14.4.
+
+### 14.8 The Pi
+
+The reference venv was rebuilt on the Pi Zero to capture the frame fixture,
+pinned as §11.3 requires. It did **not** need `python3-dev` this time: `gpiod`
+now ships an aarch64 wheel, and `spidev` — the one that needed compiling — is
+imported inside `setup()` only, which the capture never calls, so it was
+installed with `--no-deps` and left out. It was removed again once the fixture
+was captured and the driver proven on the panel, as before.

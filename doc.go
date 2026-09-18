@@ -8,8 +8,8 @@
 // # Proving a panel
 //
 // Before anything else, put the test card on it. If what appears looks like
-// the card, then the wiring, the transport, the command sequence, all four
-// inks, the dithering and the text rendering are all working:
+// the card, then the wiring, the transport, the command sequence, every ink,
+// the dithering and the text rendering are all working:
 //
 //	dev, err := inky.Open()
 //	if err != nil {

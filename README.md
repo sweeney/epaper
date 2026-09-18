@@ -8,11 +8,13 @@ A Go library for driving e-ink panels from a Raspberry Pi.
 Make the panel disappear, so that a program that wants to put something on an
 e-ink screen thinks only about the picture.
 
-> **Status: v0.** Working end to end on two panels: an Inky wHAT 4.2" on a
-> Pi 4B (20.5 s a refresh) and an Inky pHAT 2.13" on a Pi Zero 2 W (18.5 s).
+> **Status: v0.** Working end to end on three panels: an Inky wHAT 4.2" on a
+> Pi 4B (20.5 s a refresh), an Inky pHAT 2.13" on a Pi Zero 2 W (18.5 s), and a
+> six-ink Inky Impression 4.0" Spectra 6 on the same Pi Zero 2 W (20.3–20.8 s).
 > The API may still change before v1.0. See [`PLAN.md`](PLAN.md) for the design
-> and the milestone list, [`PLAN.md` §13](PLAN.md) for what the second
-> controller cost, and [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to add one.
+> and the milestone list, [`PLAN.md` §13](PLAN.md) and [§14](PLAN.md) for what
+> the second and third controllers cost, and [`CONTRIBUTING.md`](CONTRIBUTING.md)
+> for how to add one.
 
 <table>
 <tr>
@@ -27,11 +29,22 @@ e-ink screen thinks only about the picture.
 <td align="center"><b>Inky wHAT 4.2"</b> — 400 × 300</td>
 <td align="center"><b>Inky pHAT 2.13"</b> — 250 × 122</td>
 </tr>
+<tr>
+<td align="center" colspan="2">
+<img src="testdata/golden/panel-600x400-testcard.png" width="600" alt="The test card on a 600x400 six-ink panel: the same layout, with the side ladders now running through Test Card F's colour bars — white, yellow, cyan, green, magenta, red, blue, black — and green and blue patches added at the bottom of the disc.">
+</td>
+</tr>
+<tr>
+<td align="center" colspan="2"><b>Inky Impression 4.0" Spectra 6</b> — 600 × 400, six inks</td>
+</tr>
 </table>
 
-One card, one code path, laid out from whichever panel it is given. Four inks
-and nothing in between: every grey, orange and pink above is ordered dither or
-a 1px checkerboard, which this hardware resolves cleanly.
+One card, one code path, laid out from whichever panel it is given, in
+whichever inks it has. On the four-ink panels there is nothing in between:
+every grey, orange and pink above is ordered dither or a 1px checkerboard,
+which this hardware resolves cleanly. Where the panel has blue and green, the
+side ladders become Test Card F's own colour bars, with cyan and magenta mixed
+the same way.
 
 Those are not marketing renders. They are the committed goldens the tests
 assert against, so they cannot drift from what the library actually draws — and
@@ -108,10 +121,11 @@ These come from things that actually bit us on the bench, not from taste.
 |---|---|---|---|---|
 | Inky wHAT 4.2" (Pimoroni) | JD79668 | 400 × 300 | ~20.5 s | Black, white, yellow, red |
 | Inky pHAT 2.13" (Pimoroni) | JD79661 | 250 × 122 | ~18.5 s | Black, white, yellow, red |
+| Inky Impression 4.0" Spectra 6 (Pimoroni) | E640 | 600 × 400 | ~20.5 s | Black, white, yellow, red, blue, green |
 
-All four inks display **simultaneously** — "red/yellow" in the EEPROM means
-both at once, not a choice between them. Refresh is full-panel only, and both
-figures are measured on the hardware rather than quoted from a datasheet.
+Every ink displays **simultaneously** — "red/yellow" in the EEPROM means both
+at once, not a choice between them. Refresh is full-panel only, and every
+figure is measured on the hardware rather than quoted from a datasheet.
 
 Ask the library rather than this table, which will go stale:
 
@@ -120,9 +134,10 @@ go run ./cmd/epaper-testcard -list
 ```
 
 ```
-GEOMETRY    MODEL                           CONTROLLER  EEPROM VARIANT
-250x122     Red/Yellow pHAT (JD79661)       JD79661     23
-400x300     Red/Yellow wHAT (JD79668)       JD79668     24
+GEOMETRY    MODEL                             CONTROLLER  INKS   EEPROM VARIANT
+250x122     Red/Yellow pHAT (JD79661)         JD79661     4      23
+400x300     Red/Yellow wHAT (JD79668)         JD79668     4      24
+600x400     Spectra 6 4.0 600 x 400 (E640)    E640        6      25
 ```
 
 The panel identifies itself over I2C, so `inky.Open()` needs no configuration
@@ -142,6 +157,13 @@ means a new `driver/` package and one case in `inky.OpenWith`. See
 > row-major; the JD79661 pads one axis and sends the result rotated a quarter
 > turn. Picking the wrong one draws nothing, with no error. `PLAN.md` §13 has
 > the derivation.
+>
+> The Impression is the other kind of difference. Four bits a pixel rather
+> than two, a frame rotated like the pHAT's but unpadded, and colour codes that
+> **skip 4**: blue goes over the wire as 5 and green as 6, so it is the one
+> panel where a palette position is not the byte sent. Its EEPROM also records
+> the controller's portrait 400 × 600 rather than the picture's 600 × 400.
+> `PLAN.md` §14 covers both.
 
 ### Pi setup
 
@@ -170,8 +192,8 @@ The user must be in the `spi`, `i2c` and `gpio` groups. Root is not needed.
 
 ## Orientation: the panel decides, and it is landscape
 
-`Bounds()` reports the panel's native geometry — 250 × 122 or 400 × 300, always
-landscape — and `Show` rejects an image of any other shape with `ErrWrongSize`
+`Bounds()` reports the panel's native geometry — 250 × 122, 400 × 300 or
+600 × 400, always landscape — and `Show` rejects an image of any other shape with `ErrWrongSize`
 before it touches the hardware. **There is no rotation in this library.**
 
 That is a decision, not an oversight ([`PLAN.md`](PLAN.md) §9.9): rotation could
@@ -200,9 +222,9 @@ Two things that are easy to state backwards:
   are opposites and it is very easy to say one while meaning the other.
 - **Rotating costs nothing.** 30,000 pixel copies against an 18.5 s refresh.
   If you are tempted to push it into the driver for speed: the JD79661's
-  controller frame is natively *portrait* 128 × 250, and the driver already
-  rotates it to present landscape — so asking for portrait rotates twice and
-  cancels out.
+  controller frame is natively *portrait* 128 × 250, and the E640's 400 × 600,
+  and both drivers already rotate to present landscape — so asking for
+  portrait rotates twice and cancels out.
 
 ## Text: use a bitmap font
 
@@ -381,6 +403,19 @@ all eight ways of getting it wrong look different. A rotation sign error
 produces a picture that is complete, correctly coloured and upside down, which
 no byte-level test can see.
 
+The **inks** pattern is the one to draw on a panel whose driver translates
+colours, as the E640's does. Every ink as a solid swatch beside its name, and
+every pair of inks mixed — 1px checker above the diagonal, 50% dither below.
+Two swapped wire values draw a tidy card with the wrong colour in a labelled
+square, which only the label shows.
+
+<img src="testdata/golden/panel-600x400-inks.png" width="600" alt="The inks card on the Impression: a six-by-six grid labelled black, white, yellow, red, blue, green down the left. The diagonal is each ink solid; every other square mixes its row's ink with its column's.">
+
+The **conformance** pattern is fixed at 400 × 300, the size its vendor oracle
+was captured at. A smaller panel shows its top-left; a larger one marks the
+rest of the glass off with a dithered margin, so it does not read as a pattern
+drawn too small.
+
 One line proves a panel, its wiring and the whole stack:
 
 ```go
@@ -408,7 +443,10 @@ Measured on the Pi 4B itself, not on a laptop:
 
 The pHAT on a Pi Zero 2 W refreshes in **18.5 s**, repeatable to 15 ms across
 an eight-refresh soak — a slower host and a smaller panel, and the panel is
-still the entire cost.
+still the entire cost. The Impression, on the same Pi Zero, takes **20.3–20.8
+s** across an eight-refresh soak, with 120,000 bytes a frame rather than 8,000
+— still the panel, not the software. (The first refresh this library ever gave it took
+34 s; nothing since has, and why is not yet known.)
 
 Drawing and packing together are about **0.03%** of a refresh. The panel is
 roughly four thousand times slower than the software driving it, so render
@@ -447,8 +485,9 @@ make check    # everything CI runs
 ```
 
 `testdata/` holds fixtures captured from real hardware — a conformance pattern
-and a JD79661 frame layout, both byte-exact against the vendor library, and
-eight EEPROM records covering both real boards plus six failure modes. See
+and the JD79661 and E640 frame layouts, all byte-exact against the vendor
+library, and nine EEPROM records covering the three real boards plus six
+failure modes. See
 [`testdata/README.md`](testdata/README.md); those fixtures are oracles, so if
 your code disagrees with one, your code is wrong.
 
@@ -510,7 +549,7 @@ reference implementation's timing, which this library drops for the reasons in
 `PLAN.md` §9.3, and please open an issue saying what happened.
 
 **`ink green is not on this panel`**
-The panel has four inks and green is not one of them. Nothing is substituted,
+A red/yellow panel has four inks and green is not one of them. Nothing is substituted,
 deliberately: a panel that looks plausible and is wrong is the worst outcome on
 a display nobody is watching. Use `dev.Palette().NearestTo(epaper.Green)` if a
 rough match is genuinely what you want.
@@ -526,15 +565,15 @@ wrong "fixed" claims to diagnose.
 
 **`image palette is not the panel's`**
 Build images with `dev.NewImage()` or `render.NewCanvasFor(dev)`. The palette's
-order *is* the wire format, so a same-length palette with two inks swapped
-means every index denotes a different colour.
+order fixes what each index means on the wire, so a same-length palette with
+two inks swapped means every index denotes a different colour.
 
 ## Licence
 
 MIT — see [`LICENSE`](LICENSE).
 
-The JD79668 and JD79661 command sequences, their payload constants, the frame
-layouts, the EEPROM layout and the display-variant table are derived from
+The JD79668, JD79661 and E640 command sequences, their payload constants, the
+frame layouts, the E640's colour codes, the EEPROM layout and the display-variant table are derived from
 Pimoroni's [`inky`][inky] library, which
 is also MIT licensed. That derivation is acknowledged in [`NOTICE`](NOTICE), the
 vendor source is reproduced under `reference/vendor-inky/` so any constant can
