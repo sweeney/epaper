@@ -1,6 +1,7 @@
 package testcard
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"slices"
@@ -151,3 +152,51 @@ func TestConformanceMarksTheAreaOutsideThePattern(t *testing.T) {
 	}
 }
 
+// The heading is centred in the disc. It was drawn at the left of a box as
+// wide as the disc, which looked centred wherever the fitted size happened to
+// fill that box — and plainly did not on the Impression, where the height
+// caps the size first. Found on the glass, 2026-09-25.
+//
+// The heading is the only red in the top half of the disc, so its ink bounds
+// are easy to find without reaching into the drawing.
+func TestHeadingIsCentredInTheDisc(t *testing.T) {
+	for _, tc := range []struct {
+		w, h int
+		p    epaper.Palette
+	}{
+		{600, 400, sixInk},
+		{400, 300, fourInk},
+		{800, 480, fourInk}, // a 7.3" geometry, to show it is not one size
+	} {
+		t.Run(fmt.Sprintf("%dx%d", tc.w, tc.h), func(t *testing.T) {
+			c := render.NewCanvas(image.Rect(0, 0, tc.w, tc.h), tc.p)
+			Draw(c, Options{})
+			if err := c.Err(); err != nil {
+				t.Fatalf("Err(): %v", err)
+			}
+			l := newLayout(tc.w, tc.h)
+			red, _ := tc.p.Index(epaper.Red)
+
+			minX, maxX := tc.w, -1
+			for y := l.circleY - l.circleR; y < l.circleY-l.circleR/2; y++ {
+				for x := l.circleX - l.circleR; x <= l.circleX+l.circleR; x++ {
+					if dx, dy := x-l.circleX, y-l.circleY; dx*dx+dy*dy >= l.circleR*l.circleR {
+						continue
+					}
+					if c.Image().ColorIndexAt(x, y) == red {
+						minX, maxX = min(minX, x), max(maxX, x)
+					}
+				}
+			}
+			if maxX < 0 {
+				t.Fatal("no heading found in the top of the disc")
+			}
+			// Two pixels of slack: a glyph's ink need not sit symmetrically
+			// in its advance, and an odd leftover cannot split evenly.
+			if off := (minX+maxX)/2 - l.circleX; off < -2 || off > 2 {
+				t.Errorf("heading spans x %d..%d, centred %d px off the disc's centre %d",
+					minX, maxX, off, l.circleX)
+			}
+		})
+	}
+}
