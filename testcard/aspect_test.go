@@ -89,7 +89,7 @@ func TestCardDrawsAtEveryAspectRatio(t *testing.T) {
 }
 
 // The clamps above must be no-ops on the panels that actually exist. This is
-// what lets the reviewed 400x300 and 250x122 goldens stand as proof that
+// what lets the reviewed 400x300, 250x122 and 600x400 goldens stand as proof that
 // nothing moved — without it, a future clamp could quietly reshape a real
 // panel's card and only a regenerated golden would show it.
 func TestLayoutIsUnchangedOnTheRealPanels(t *testing.T) {
@@ -103,6 +103,8 @@ func TestLayoutIsUnchangedOnTheRealPanels(t *testing.T) {
 		{400, 300, 12, 25, 200, 148, 78},
 		// And the pHAT's, as reviewed on the panel on 2026-09-16.
 		{250, 122, 4, 10, 125, 60, 31},
+		// And the Impression's, as reviewed on the panel on 2026-09-25.
+		{600, 400, 16, 33, 300, 197, 104},
 	} {
 		t.Run(fmt.Sprintf("%dx%d", tc.w, tc.h), func(t *testing.T) {
 			l := newLayout(tc.w, tc.h)

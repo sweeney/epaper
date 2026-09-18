@@ -100,8 +100,18 @@ func drawCircle(c *render.Canvas, l layout, fonts render.FontFamily, title strin
 	// in the ladders either side of the card.
 	patchH := atLeast(l.circleR*14/78, 5)
 	if half := l.inscribedHalfWidth(maxAbs(y-l.circleY, y+patchH-l.circleY)); half > 12 {
-		c.Checker(image.Rect(l.circleX-half, y, l.circleX, y+patchH), epaper.Yellow, epaper.Red, 1)
-		c.Rect(image.Rect(l.circleX+1, y, l.circleX+half, y+patchH), epaper.Red)
+		if hasColourBars(c.Palette()) {
+			// Four quarters: orange, then the three chromatic inks that are
+			// not already solid somewhere on the ladder's light end.
+			q := half / 2
+			c.Checker(image.Rect(l.circleX-half, y, l.circleX-q, y+patchH), epaper.Yellow, epaper.Red, 1)
+			c.Rect(image.Rect(l.circleX-q, y, l.circleX, y+patchH), epaper.Red)
+			c.Rect(image.Rect(l.circleX, y, l.circleX+q, y+patchH), epaper.Green)
+			c.Rect(image.Rect(l.circleX+q, y, l.circleX+half, y+patchH), epaper.Blue)
+		} else {
+			c.Checker(image.Rect(l.circleX-half, y, l.circleX, y+patchH), epaper.Yellow, epaper.Red, 1)
+			c.Rect(image.Rect(l.circleX+1, y, l.circleX+half, y+patchH), epaper.Red)
+		}
 		c.StrokeRect(image.Rect(l.circleX-half, y, l.circleX+half, y+patchH), epaper.Black)
 	}
 }

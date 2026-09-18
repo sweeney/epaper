@@ -1,8 +1,8 @@
-// Package testcard draws a four-ink test card for e-ink panels.
+// Package testcard draws test cards for e-ink panels.
 //
 // It is the visual acceptance test: a pattern designed so that a person
 // looking at the panel can tell, in a few seconds, whether the whole stack
-// works — geometry, all four inks, dithering, fine detail and text.
+// works — geometry, every ink, dithering, fine detail and text.
 //
 // # What this is, and what it is not
 //
@@ -19,11 +19,11 @@
 // already cover. The central circle carries a legibility ladder and a pixel
 // grid instead, which are more useful on a small panel than a drawing is.
 //
-// # No greys, no cyan, no green
+// # No greys, no cyan, and green only where there is green
 //
-// The panel has four inks. Everything between them is made by ordered dither
-// and checkerboards, which the bench proved this hardware resolves cleanly at
-// 1px:
+// A red/yellow panel has four inks. Everything between them is made by
+// ordered dither and checkerboards, which the bench proved this hardware
+// resolves cleanly at 1px:
 //
 //	grey       4x4 Bayer black-on-white at a ratio
 //	orange     1px yellow/red checkerboard
@@ -34,6 +34,18 @@
 // hues the panel cannot make. That is the honest translation: the card exists
 // to check luminance steps and frequency response, and both survive the
 // palette loss intact.
+//
+// A panel with blue and green as well — Spectra 6 — gets Test Card F's own
+// colour bars down the sides instead, with cyan and magenta mixed from their
+// neighbours, and green and blue patches in the disc. The card asks the
+// canvas which inks it has; nothing here knows about any particular panel.
+//
+// # The other cards
+//
+// [DrawOrientation] says which way up a panel is drawing. [DrawInks] puts
+// every ink beside its name, and every pair mixed, for a driver that
+// translates colours. [DrawConformance] is the text-free pattern the vendor
+// oracle pins, byte for byte.
 package testcard
 
 import (
@@ -79,8 +91,8 @@ type Options struct {
 // Show draws the card on a device and refreshes it.
 //
 // This is the one-liner for proving a panel: if what appears looks like the
-// card, then the wiring, the transport, the command sequence, all four inks,
-// the dithering and the text rendering are all working. A full refresh takes
+// card, then the wiring, the transport, the command sequence, every ink, the
+// dithering and the text rendering are all working. A full refresh takes
 // around 20 seconds.
 //
 // The device's model name is printed first, followed by any lines given.

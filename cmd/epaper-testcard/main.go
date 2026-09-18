@@ -6,6 +6,7 @@
 //
 //	epaper-testcard                      # draw the test card on the panel
 //	epaper-testcard -pattern conformance  # draw the conformance pattern
+//	epaper-testcard -pattern inks         # every ink, labelled, and every pair mixed
 //	epaper-testcard -png card.png         # render to a file, no hardware needed
 //	epaper-testcard -png c.png -size 250x122   # ...at another panel's geometry
 //	epaper-testcard -png out/card.png -size all # ...at every supported geometry
@@ -54,7 +55,7 @@ func run() error {
 		pngPath = flag.String("png", "", "render to this PNG file instead of the panel")
 		size    = flag.String("size", "", "with -png: the geometry to render at — WxH, a panel model, or \"all\" (default: every supported panel)")
 		list    = flag.Bool("list", false, "list the panels this library supports, and exit")
-		pattern = flag.String("pattern", "testcard", "which pattern: testcard, orientation or conformance")
+		pattern = flag.String("pattern", "testcard", "which pattern: testcard, orientation, conformance or inks")
 		note    = flag.String("note", "", "extra line of text on the card")
 		timeout = flag.Duration("timeout", 2*time.Minute, "how long to wait for the refresh")
 		vendor  = flag.Bool("vendor-timing", false,
@@ -66,7 +67,7 @@ func run() error {
 		return listPanels()
 	}
 	if !validPattern(*pattern) {
-		return fmt.Errorf("unknown pattern %q: want testcard, orientation or conformance", *pattern)
+		return fmt.Errorf("unknown pattern %q: want testcard, orientation, conformance or inks", *pattern)
 	}
 	if *size != "" && *pngPath == "" {
 		return errors.New("-size only applies to -png: on a real panel the EEPROM decides the geometry")
@@ -94,7 +95,7 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	fmt.Printf("drawing %s — a full refresh takes about 20 seconds...\n", *pattern)
+	fmt.Printf("drawing %s — a full refresh takes 20 seconds or more...\n", *pattern)
 	started := time.Now()
 	if err := dev.Show(ctx, img); err != nil {
 		return err
@@ -114,7 +115,7 @@ func commandDelay(vendor bool) time.Duration {
 
 func validPattern(p string) bool {
 	switch p {
-	case "testcard", "orientation", "conformance":
+	case "testcard", "orientation", "conformance", "inks":
 		return true
 	}
 	return false
@@ -123,10 +124,10 @@ func validPattern(p string) bool {
 // listPanels prints what this library can drive. It needs no hardware: the
 // list comes from the drivers that are compiled in.
 func listPanels() error {
-	fmt.Printf("%-10s  %-30s  %-10s  %s\n", "GEOMETRY", "MODEL", "CONTROLLER", "EEPROM VARIANT")
+	fmt.Printf("%-10s  %-32s  %-10s  %-5s  %s\n", "GEOMETRY", "MODEL", "CONTROLLER", "INKS", "EEPROM VARIANT")
 	for _, p := range inky.SupportedPanels() {
-		fmt.Printf("%-10s  %-30s  %-10s  %d\n",
-			fmt.Sprintf("%dx%d", p.Width, p.Height), p.Model, p.Controller, p.DisplayVariant)
+		fmt.Printf("%-10s  %-32s  %-10s  %-5d  %d\n",
+			fmt.Sprintf("%dx%d", p.Width, p.Height), p.Model, p.Controller, len(p.Palette), p.DisplayVariant)
 	}
 	return nil
 }
@@ -143,7 +144,7 @@ func renderPNGs(path, size, pattern, note string) error {
 		return err
 	}
 	for _, p := range panels {
-		img, err := draw(image.Rect(0, 0, p.Width, p.Height), paletteForPNG(), pattern, p.Model, note)
+		img, err := draw(image.Rect(0, 0, p.Width, p.Height), paletteFor(p), pattern, p.Model, note)
 		if err != nil {
 			return fmt.Errorf("%dx%d: %w", p.Width, p.Height, err)
 		}
@@ -171,6 +172,13 @@ func panelsFor(size string) ([]inky.Panel, error) {
 	if w, h, ok := parseSize(size); ok {
 		if w <= 0 || h <= 0 {
 			return nil, fmt.Errorf("size %q: both dimensions must be positive", size)
+		}
+		// A supported panel's geometry means that panel, so it is drawn in
+		// its own inks rather than the fallback's.
+		for _, p := range inky.SupportedPanels() {
+			if p.Width == w && p.Height == h {
+				return []inky.Panel{p}, nil
+			}
 		}
 		return []inky.Panel{{Model: fmt.Sprintf("%dx%d", w, h), Width: w, Height: h}}, nil
 	}
@@ -219,6 +227,8 @@ func draw(bounds image.Rectangle, palette epaper.Palette, pattern, model, note s
 		testcard.DrawConformance(c)
 	case "orientation":
 		testcard.DrawOrientation(c)
+	case "inks":
+		testcard.DrawInks(c)
 	default:
 		testcard.Draw(c, testcard.Options{Lines: []string{model, note}})
 	}
@@ -248,10 +258,19 @@ func writePNG(path string, img image.Image) error {
 	return nil
 }
 
-// paletteForPNG is the JD79668's palette. The offline path cannot ask a device
-// for it, and hardcoding it here keeps the driver package out of a rendering
-// command's import graph.
-func paletteForPNG() epaper.Palette {
+// paletteFor is the palette to render a panel in offline: its driver's own,
+// or, for a geometry no supported panel has, [fallbackPalette].
+func paletteFor(p inky.Panel) epaper.Palette {
+	if len(p.Palette) > 0 {
+		return p.Palette
+	}
+	return fallbackPalette()
+}
+
+// fallbackPalette is the four-ink red/yellow palette, for rendering at a size
+// nobody sells. There is no panel to ask, and four inks is the conservative
+// guess: every card draws in them, while a six-ink card needs the six.
+func fallbackPalette() epaper.Palette {
 	return epaper.Palette{
 		{Ink: epaper.Black, RGB: rgb(0, 0, 0)},
 		{Ink: epaper.White, RGB: rgb(255, 255, 255)},

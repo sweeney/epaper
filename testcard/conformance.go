@@ -19,6 +19,12 @@ import (
 // Use it to check a port, or to check wiring: the four single-pixel corner
 // markers catch flips and transpositions that leave the rest of the pattern
 // looking entirely plausible.
+//
+// The pattern is always 400x300, anchored top-left, because that is the size
+// the vendor oracle was captured at and scaling it would break the comparison.
+// A smaller panel shows the top-left of it. A larger one gets the rest of its
+// glass filled with a 50% dither, ruled off from the pattern — left white, a
+// 600x400 panel looked like the pattern had been drawn a third too small.
 func DrawConformance(c *render.Canvas) {
 	const w, h = 400, 300
 
@@ -88,5 +94,20 @@ func DrawConformance(c *render.Canvas) {
 	c.Set(396, 299, epaper.Yellow)
 	c.Set(399, 296, epaper.White)
 
-	_ = h
+	drawConformanceMargin(c, w, h)
+}
+
+// drawConformanceMargin marks whatever of the panel lies outside the w-by-h
+// pattern as not part of it: a dithered field, and a black rule hard against
+// the pattern's right and bottom edges. Nothing is drawn inside the pattern.
+func drawConformanceMargin(c *render.Canvas, w, h int) {
+	b := c.Bounds()
+	if b.Max.X > w {
+		c.Dither(image.Rect(w, b.Min.Y, b.Max.X, b.Max.Y), epaper.Black, epaper.White, 0.5)
+		c.Rect(image.Rect(w, b.Min.Y, w+1, min(h+1, b.Max.Y)), epaper.Black)
+	}
+	if b.Max.Y > h {
+		c.Dither(image.Rect(b.Min.X, h, b.Max.X, b.Max.Y), epaper.Black, epaper.White, 0.5)
+		c.Rect(image.Rect(b.Min.X, h, min(w+1, b.Max.X), h+1), epaper.Black)
+	}
 }

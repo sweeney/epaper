@@ -52,7 +52,8 @@ var (
 	_ gpioLines = (*gpiocdev.Lines)(nil)
 )
 
-// conn implements jd79668.Conn over an SPI device and four GPIO lines.
+// conn implements every driver's Conn — they declare the same three methods —
+// over an SPI device and four GPIO lines.
 type conn struct {
 	spi  spiWriter
 	gpio gpioLines
