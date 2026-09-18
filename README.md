@@ -321,6 +321,13 @@ Placement is a separate axis: `Canvas.TextAligned(r, s, f, ink, align)` takes
 numeric column, a clock and an axis label all want right-alignment before they
 want anything else.
 
+Text too wide for its box is clamped to the box's left edge rather than drawn
+at a negative offset — but note that this is the right default only when the
+text merely needs to *be* somewhere. When its position is a **claim** — an hour
+label under a chart tick — clamping draws it confidently above the wrong tick,
+and the safe failure is to skip it. Clamp when the text is somewhere; omit when
+its position is an assertion.
+
 ### Dither has 17 tones, not a continuous range
 
 `Dither`'s `ratio` is a `float64` and reads like a knob you can turn anywhere.

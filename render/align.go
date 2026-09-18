@@ -59,6 +59,29 @@ func (a Align) String() string {
 // side of the panel, silently, on a display nobody is watching. Truncate or
 // widen the box instead.
 //
+// # Clamping is the right default and the wrong one for an axis
+//
+// The clamp assumes the text merely needs to BE somewhere. That holds for a
+// clock in a header, a value in a column, a title: their exact x is
+// presentation, so nudging it to stay on the panel loses nothing.
+//
+// It does not hold when the position is a CLAIM. An hour label centred under a
+// tick on a chart says "this one is 18:00" by virtue of where it sits. Clamp
+// it and it is still drawn, still legible, still confident — and now pointing
+// at the wrong tick. That is worse than absent, because a reader has no way to
+// tell.
+//
+// So for anything positional, check before you draw and skip what does not
+// fit:
+//
+//	if x < plot.Min.X || x+MeasureText(s, f) > plot.Max.X {
+//		continue // half off the panel is worse than absent
+//	}
+//
+// The rule, from the consumer who hit both halves of it in one layout (issue
+// #5): clamp when the text merely is somewhere, omit when its position is an
+// assertion.
+//
 // An unrecognised Align is recorded as an error rather than treated as left,
 // because a wrong constant is a bug and drawing something plausible hides it.
 func (c *Canvas) TextAligned(r image.Rectangle, s string, f font.Face, i epaper.Ink, a Align) {
