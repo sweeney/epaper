@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sweeney/epaper"
+	"github.com/sweeney/epaper/driver/e640"
 	"github.com/sweeney/epaper/driver/jd79661"
 	"github.com/sweeney/epaper/driver/jd79668"
 	"github.com/sweeney/epaper/internal/gpiocdev"
@@ -46,6 +47,8 @@ type Pins struct {
 // DefaultPins is Pimoroni's assignment for the Inky HAT range.
 //
 // From inky_jd79668.py: RESET_PIN = 27, BUSY_PIN = 17, DC_PIN = 22, CS_PIN = 8.
+// inky_jd79661.py and inky_e640.py use the same four, so every board this
+// package drives shares them.
 var DefaultPins = Pins{Reset: 27, Busy: 17, DataCommand: 22, ChipSelect: 8}
 
 // Default device paths and bus settings.
@@ -201,8 +204,13 @@ type Panel struct {
 	Controller string
 
 	// Width and Height are the panel's nominal geometry in pixels, in the
-	// orientation the picture is drawn in.
+	// orientation the picture is drawn in. This is not always the EEPROM's:
+	// the Impression 4.0" records its controller's portrait frame.
 	Width, Height int
+
+	// Palette is the driver's palette, so a preview can be drawn in the
+	// panel's own inks without opening it.
+	Palette epaper.Palette
 }
 
 // SupportedPanels returns every board this library has a driver for.
@@ -218,12 +226,21 @@ func SupportedPanels() []Panel {
 			Model:          displayVariants[variantRedYellowPHatJD79661],
 			Controller:     "JD79661",
 			Width:          250, Height: 122,
+			Palette: jd79661.Palette,
 		},
 		{
 			DisplayVariant: variantRedYellowWhatJD79668,
 			Model:          displayVariants[variantRedYellowWhatJD79668],
 			Controller:     "JD79668",
 			Width:          400, Height: 300,
+			Palette: jd79668.Palette,
+		},
+		{
+			DisplayVariant: variantSpectra6ImpressionE640,
+			Model:          displayVariants[variantSpectra6ImpressionE640],
+			Controller:     "E640",
+			Width:          600, Height: 400,
+			Palette: e640.Palette,
 		},
 	}
 }
@@ -258,6 +275,21 @@ func driverFor(variant uint8) (func(*conn, *EEPROM, Options) (epaper.Device, err
 				BusyTimeout:  opts.BusyTimeout,
 			})
 		}, true
+	case variantSpectra6ImpressionE640:
+		return func(c *conn, info *EEPROM, opts Options) (epaper.Device, error) {
+			// Swapped. The EEPROM records the controller's portrait frame,
+			// 400x600; the picture is 600x400, which is how inky_e640.py
+			// presents it (auto.py passes resolution=(600, 400) and ignores
+			// the EEPROM's) and how the board's own model name reads. The
+			// driver turns it back a quarter turn on the way out.
+			return e640.New(c, e640.Config{
+				Width:        info.Height,
+				Height:       info.Width,
+				Model:        info.Model,
+				CommandDelay: opts.CommandDelay,
+				BusyTimeout:  opts.BusyTimeout,
+			})
+		}, true
 	}
 	return nil, false
 }
@@ -283,12 +315,13 @@ func Identify(i2cPath string) (*EEPROM, error) {
 }
 
 // The display variants this library has drivers for, from the vendor's table
-// in eeprom.go. Both boards are four-ink red/yellow panels; they differ in the
-// controller behind the glass, which is the whole reason there are two
-// drivers.
+// in eeprom.go. The first two are four-ink red/yellow panels that differ only
+// in the controller behind the glass, which is the whole reason there are two
+// drivers; the third is a six-ink Spectra 6.
 const (
-	variantRedYellowPHatJD79661 = 23 // Inky pHAT 2.13", 250x122
-	variantRedYellowWhatJD79668 = 24 // Inky wHAT 4.2",  400x300
+	variantRedYellowPHatJD79661   = 23 // Inky pHAT 2.13",       250x122
+	variantRedYellowWhatJD79668   = 24 // Inky wHAT 4.2",        400x300
+	variantSpectra6ImpressionE640 = 25 // Inky Impression 4.0",  600x400
 )
 
 // gpioError turns a line-request failure into advice.

@@ -87,6 +87,37 @@ func TestDrawOrientation(t *testing.T) {
 		"arrow pointing top-left. A black rule along the top edge only, a red one down the left.")
 }
 
+// TestDrawInks puts every ink on the glass beside its name.
+//
+// It is the check for a driver that translates palette positions into wire
+// values, as the E640's does — its colour codes skip 4, so blue and green are
+// not sent as their palette positions. A mistake there draws a tidy card with
+// the wrong colour in a labelled swatch, which no byte-level test can see.
+// Read the diagonal: each solid square must be the ink named beside it.
+func TestDrawInks(t *testing.T) {
+	dev, err := inky.Open()
+	if err != nil {
+		t.Fatalf("inky.Open(): %v", err)
+	}
+	defer dev.Close()
+
+	c := render.NewCanvasFor(dev)
+	testcard.DrawInks(c)
+	if err := c.Err(); err != nil {
+		t.Fatalf("drawing: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), drawTimeout)
+	defer cancel()
+
+	started := time.Now()
+	if err := dev.Show(ctx, c.Image()); err != nil {
+		t.Fatalf("Show(): %v", err)
+	}
+	t.Logf("inks refresh took %s", time.Since(started).Round(time.Millisecond))
+	t.Log("LOOK AT THE PANEL: down the diagonal, each solid square is the ink named on its row.")
+}
+
 // TestDrawTestCard is the visual acceptance test, and it runs last so it is
 // what the panel is left showing.
 //

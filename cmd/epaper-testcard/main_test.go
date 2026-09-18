@@ -20,7 +20,7 @@ func bounds400x300() image.Rectangle { return image.Rect(0, 0, 400, 300) }
 func TestDrawPatterns(t *testing.T) {
 	for _, pattern := range []string{"testcard", "orientation", "conformance"} {
 		t.Run(pattern, func(t *testing.T) {
-			img, err := draw(bounds400x300(), paletteForPNG(), pattern, "Test Model", "a note")
+			img, err := draw(bounds400x300(), fallbackPalette(), pattern, "Test Model", "a note")
 			if err != nil {
 				t.Fatalf("draw(): %v", err)
 			}
@@ -52,7 +52,7 @@ func TestDrawPatterns(t *testing.T) {
 func TestDrawUnknownPatternFallsBackToTheCard(t *testing.T) {
 	// The flag is validated in run(); draw treats anything else as the card
 	// rather than returning an empty image.
-	img, err := draw(bounds400x300(), paletteForPNG(), "nonsense", "m", "")
+	img, err := draw(bounds400x300(), fallbackPalette(), "nonsense", "m", "")
 	if err != nil {
 		t.Fatalf("draw(): %v", err)
 	}
@@ -69,7 +69,7 @@ func TestDrawUnknownPatternFallsBackToTheCard(t *testing.T) {
 }
 
 func TestWritePNG(t *testing.T) {
-	img, err := draw(bounds400x300(), paletteForPNG(), "testcard", "m", "")
+	img, err := draw(bounds400x300(), fallbackPalette(), "testcard", "m", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,9 +114,9 @@ func TestDrawEverySupportedPanel(t *testing.T) {
 		t.Fatal("no supported panels")
 	}
 	for _, p := range panels {
-		for _, pattern := range []string{"testcard", "orientation", "conformance"} {
+		for _, pattern := range []string{"testcard", "orientation", "conformance", "inks"} {
 			t.Run(p.Model+"/"+pattern, func(t *testing.T) {
-				img, err := draw(image.Rect(0, 0, p.Width, p.Height), paletteForPNG(), pattern, p.Model, "")
+				img, err := draw(image.Rect(0, 0, p.Width, p.Height), paletteFor(p), pattern, p.Model, "")
 				if err != nil {
 					t.Fatalf("draw(): %v", err)
 				}
@@ -125,6 +125,37 @@ func TestDrawEverySupportedPanel(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Offline renders are drawn in the panel's own inks. A preview of the
+// Impression in four inks would show a card that panel never draws — no
+// colour bars, and an inks card missing two rows.
+func TestOfflineRenderUsesThePanelsOwnPalette(t *testing.T) {
+	for _, p := range inky.SupportedPanels() {
+		t.Run(p.Model, func(t *testing.T) {
+			img, err := draw(image.Rect(0, 0, p.Width, p.Height), paletteFor(p), "testcard", p.Model, "")
+			if err != nil {
+				t.Fatalf("draw(): %v", err)
+			}
+			if got, want := len(img.Palette), len(p.Palette); got != want {
+				t.Errorf("rendered with %d colours, the panel has %d", got, want)
+			}
+			seen := map[uint8]bool{}
+			for _, px := range img.Pix {
+				seen[px] = true
+			}
+			if len(seen) != len(p.Palette) {
+				t.Errorf("used %d inks, the panel has %d", len(seen), len(p.Palette))
+			}
+		})
+	}
+}
+
+// A geometry no panel has gets the four-ink palette: there is no panel to ask.
+func TestUnsoldGeometryFallsBackToFourInks(t *testing.T) {
+	if got := paletteFor(inky.Panel{Width: 600, Height: 448}); len(got) != 4 {
+		t.Errorf("an unsold geometry got %d inks, want the four-ink fallback", len(got))
 	}
 }
 
@@ -181,10 +212,28 @@ func TestPanelsFor(t *testing.T) {
 			},
 		},
 		{
+			// A WxH that IS a supported panel is that panel, palette and
+			// all, so "-size 600x400" previews the Impression's own card.
+			"a supported panel's geometry", "600x400", 1,
+			func(t *testing.T, got []inky.Panel) {
+				if len(got[0].Palette) != 6 {
+					t.Errorf("600x400 got %d inks, want the Impression's 6", len(got[0].Palette))
+				}
+			},
+		},
+		{
 			"a model substring", "phat", 1,
 			func(t *testing.T, got []inky.Panel) {
 				if got[0].Width != 250 {
 					t.Errorf("matched %q, want the pHAT", got[0].Model)
+				}
+			},
+		},
+		{
+			"another model substring", "spectra", 1,
+			func(t *testing.T, got []inky.Panel) {
+				if got[0].Controller != "E640" {
+					t.Errorf("matched %q, want the E640", got[0].Controller)
 				}
 			},
 		},
@@ -231,7 +280,7 @@ func TestSuffixed(t *testing.T) {
 }
 
 func TestValidPattern(t *testing.T) {
-	for _, p := range []string{"testcard", "orientation", "conformance"} {
+	for _, p := range []string{"testcard", "orientation", "conformance", "inks"} {
 		if !validPattern(p) {
 			t.Errorf("validPattern(%q) = false", p)
 		}
@@ -254,8 +303,8 @@ func TestCommandDelayFlag(t *testing.T) {
 	}
 }
 
-func TestPaletteForPNGMatchesTheDriver(t *testing.T) {
-	p := paletteForPNG()
+func TestFallbackPaletteIsTheFourInkOne(t *testing.T) {
+	p := fallbackPalette()
 	if len(p) != 4 {
 		t.Fatalf("palette has %d entries, want 4", len(p))
 	}

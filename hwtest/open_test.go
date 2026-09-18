@@ -45,21 +45,46 @@ func TestOpen(t *testing.T) {
 	t.Logf("eeprom: %dx%d %s, pcb v%s, display variant %d, written %s",
 		info.Width, info.Height, info.Colour, info.PCBRevision(), info.DisplayVariant, info.WriteTime)
 
-	if got, want := dev.Bounds(), image.Rect(0, 0, info.Width, info.Height); got != want {
-		t.Errorf("Bounds() = %v, want %v — the EEPROM's geometry did not reach the driver", got, want)
+	// The picture's geometry and inks come from the supported-panel entry
+	// for the board's variant, not straight from the EEPROM: the Impression's
+	// EEPROM records its controller's portrait 400x600, and the picture is
+	// 600x400. So look the board up, and check the device against that.
+	var panel *inky.Panel
+	for _, p := range inky.SupportedPanels() {
+		if p.DisplayVariant == info.DisplayVariant {
+			panel = &p
+		}
+	}
+	if panel == nil {
+		t.Fatalf("display variant %d opened but is not in SupportedPanels", info.DisplayVariant)
+	}
+
+	if got, want := dev.Bounds(), image.Rect(0, 0, panel.Width, panel.Height); got != want {
+		t.Errorf("Bounds() = %v, want %v", got, want)
+	}
+	if dev.Bounds().Dx() < dev.Bounds().Dy() {
+		t.Errorf("Bounds() = %v is portrait; every supported panel presents landscape", dev.Bounds())
 	}
 	if dev.Model() != info.Model {
 		t.Errorf("Model() = %q, want the EEPROM name %q", dev.Model(), info.Model)
 	}
 
-	// All four inks, simultaneously. The handover notes said three.
-	for _, ink := range []epaper.Ink{epaper.Black, epaper.White, epaper.Yellow, epaper.Red} {
+	// Every ink the board's colour string promises, and no others. "red/yellow"
+	// means both at once — the handover notes said three inks, and were wrong.
+	want := map[string][]epaper.Ink{
+		"red/yellow": {epaper.Black, epaper.White, epaper.Yellow, epaper.Red},
+		"spectra6":   {epaper.Black, epaper.White, epaper.Yellow, epaper.Red, epaper.Blue, epaper.Green},
+	}[info.Colour]
+	if want == nil {
+		t.Fatalf("no expectation for colour %q; add one", info.Colour)
+	}
+	if got := len(dev.Palette()); got != len(want) {
+		t.Errorf("palette has %d inks, want %d for %q", got, len(want), info.Colour)
+	}
+	for _, ink := range want {
 		if !dev.Palette().Has(ink) {
 			t.Errorf("palette has no %s", ink)
 		}
-	}
-	if dev.Palette().Has(epaper.Green) {
-		t.Error("palette claims to have green")
 	}
 
 	// The image it hands out must be one it will accept back.

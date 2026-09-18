@@ -3,21 +3,20 @@ package testcard_test
 import (
 	"fmt"
 	"image"
-	"image/color"
 	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
 
-	"github.com/sweeney/epaper"
 	"github.com/sweeney/epaper/inky"
 	"github.com/sweeney/epaper/internal/golden"
 	"github.com/sweeney/epaper/render"
 	"github.com/sweeney/epaper/testcard"
 )
 
-// Every panel the library supports gets its card and its orientation card
-// rendered, and both go into testdata/golden — which is what CI collects into
+// Every panel the library supports gets its test card, orientation card,
+// conformance pattern and inks card rendered, and all four go into
+// testdata/golden — which is what CI collects into
 // the HTML report. Adding a driver therefore adds its renders to the report
 // without anyone having to remember to.
 //
@@ -29,13 +28,11 @@ import (
 // LOOK AT THESE when they change. A golden accepted without being looked at
 // asserts nothing at all — and the whole reason this file exists is that the
 // card was scrambled at 250x122 for as long as nobody had rendered it there.
-var fourInk = epaper.Palette{
-	{Ink: epaper.Black, RGB: color.RGBA{0, 0, 0, 255}},
-	{Ink: epaper.White, RGB: color.RGBA{255, 255, 255, 255}},
-	{Ink: epaper.Yellow, RGB: color.RGBA{235, 205, 40, 255}},
-	{Ink: epaper.Red, RGB: color.RGBA{190, 45, 40, 255}},
-}
-
+//
+// Each panel is drawn in its OWN palette, from SupportedPanels. The card
+// adapts to the inks it is given — colour bars where there is blue and green —
+// so rendering every panel in one shared palette would preview a card no
+// panel ever shows.
 func TestGoldenEverySupportedPanel(t *testing.T) {
 	panels := inky.SupportedPanels()
 	if len(panels) == 0 {
@@ -46,27 +43,34 @@ func TestGoldenEverySupportedPanel(t *testing.T) {
 		t.Run(fmt.Sprintf("%dx%d", p.Width, p.Height), func(t *testing.T) {
 			bounds := image.Rect(0, 0, p.Width, p.Height)
 
-			card := render.NewCanvas(bounds, fourInk)
+			card := render.NewCanvas(bounds, p.Palette)
 			// Fixed lines, so the goldens do not change with the clock.
-			testcard.Draw(card, testcard.Options{Lines: []string{p.Model, fmt.Sprintf("%dx%d 4-ink", p.Width, p.Height)}})
+			testcard.Draw(card, testcard.Options{Lines: []string{p.Model, fmt.Sprintf("%dx%d %d-ink", p.Width, p.Height, len(p.Palette))}})
 			if err := card.Err(); err != nil {
 				t.Fatalf("Draw(): %v", err)
 			}
 			golden.Assert(t, fmt.Sprintf("panel-%dx%d-testcard", p.Width, p.Height), card.Image())
 
-			orient := render.NewCanvas(bounds, fourInk)
+			orient := render.NewCanvas(bounds, p.Palette)
 			testcard.DrawOrientation(orient)
 			if err := orient.Err(); err != nil {
 				t.Fatalf("DrawOrientation(): %v", err)
 			}
 			golden.Assert(t, fmt.Sprintf("panel-%dx%d-orientation", p.Width, p.Height), orient.Image())
 
-			conf := render.NewCanvas(bounds, fourInk)
+			conf := render.NewCanvas(bounds, p.Palette)
 			testcard.DrawConformance(conf)
 			if err := conf.Err(); err != nil {
 				t.Fatalf("DrawConformance(): %v", err)
 			}
 			golden.Assert(t, fmt.Sprintf("panel-%dx%d-conformance", p.Width, p.Height), conf.Image())
+
+			inks := render.NewCanvas(bounds, p.Palette)
+			testcard.DrawInks(inks)
+			if err := inks.Err(); err != nil {
+				t.Fatalf("DrawInks(): %v", err)
+			}
+			golden.Assert(t, fmt.Sprintf("panel-%dx%d-inks", p.Width, p.Height), inks.Image())
 		})
 	}
 }
@@ -77,7 +81,7 @@ func TestGoldenEverySupportedPanel(t *testing.T) {
 func TestCardFillsEverySupportedPanel(t *testing.T) {
 	for _, p := range inky.SupportedPanels() {
 		t.Run(fmt.Sprintf("%dx%d", p.Width, p.Height), func(t *testing.T) {
-			c := render.NewCanvas(image.Rect(0, 0, p.Width, p.Height), fourInk)
+			c := render.NewCanvas(image.Rect(0, 0, p.Width, p.Height), p.Palette)
 			testcard.Draw(c, testcard.Options{Lines: []string{p.Model}})
 			if err := c.Err(); err != nil {
 				t.Fatalf("Draw(): %v", err)
@@ -91,8 +95,8 @@ func TestCardFillsEverySupportedPanel(t *testing.T) {
 					seen[img.ColorIndexAt(x, y)] = true
 				}
 			}
-			if len(seen) != 4 {
-				t.Errorf("used %d inks, want all 4", len(seen))
+			if len(seen) != len(p.Palette) {
+				t.Errorf("used %d inks, want all %d", len(seen), len(p.Palette))
 			}
 
 			// The castellated border must reach every edge. If the layout
@@ -136,12 +140,12 @@ func TestCircleContentStaysInsideEverySupportedPanel(t *testing.T) {
 			// The card as drawn, against the same card with the disc left
 			// out: any pixel outside the disc that the two disagree about was
 			// put there by the disc.
-			full := render.NewCanvas(bounds, fourInk)
+			full := render.NewCanvas(bounds, p.Palette)
 			testcard.Draw(full, testcard.Options{Lines: []string{p.Model, "a deliberately long second line"}})
 			if err := full.Err(); err != nil {
 				t.Fatalf("Draw(): %v", err)
 			}
-			bare := render.NewCanvas(bounds, fourInk)
+			bare := render.NewCanvas(bounds, p.Palette)
 			testcard.Draw(bare, testcard.Options{NoText: true})
 			if err := bare.Err(); err != nil {
 				t.Fatalf("Draw(NoText): %v", err)

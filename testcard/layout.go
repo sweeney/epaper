@@ -33,9 +33,9 @@ type ladder struct {
 	paint func(c *render.Canvas, r image.Rectangle)
 }
 
-// ladderSteps runs light to dark. Only four of the seven are real inks; the
+// fourInkLadder runs light to dark. Only four of the seven are real inks; the
 // rest are mixes, which is the point.
-var ladderSteps = []ladder{
+var fourInkLadder = []ladder{
 	{"white", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.White) }},
 	{"yellow", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.Yellow) }},
 	{"orange", func(c *render.Canvas, r image.Rectangle) { c.Checker(r, epaper.Yellow, epaper.Red, 1) }},
@@ -45,7 +45,44 @@ var ladderSteps = []ladder{
 	{"black", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.Black) }},
 }
 
+// colourBarLadder is Test Card F's own side bars — the EBU colour bars in
+// their luminance order — for a panel that has the blue and green to draw
+// them. Six of the eight are inks. Cyan and magenta are not, on any panel this
+// library drives, so they are 1px checkers of their two neighbours in the
+// additive sense: blue lightened with white for cyan, red and blue for
+// magenta.
+//
+// The order is the broadcast one, not a measurement of Spectra 6: on the glass
+// its green, magenta and red sit close together in lightness. The card keeps
+// the canonical order because what it checks is that every ink lands in its
+// labelled place, which a reordered ladder would make harder to read.
+var colourBarLadder = []ladder{
+	{"white", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.White) }},
+	{"yellow", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.Yellow) }},
+	{"cyan", func(c *render.Canvas, r image.Rectangle) { c.Checker(r, epaper.Blue, epaper.White, 1) }},
+	{"green", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.Green) }},
+	{"magenta", func(c *render.Canvas, r image.Rectangle) { c.Checker(r, epaper.Red, epaper.Blue, 1) }},
+	{"red", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.Red) }},
+	{"blue", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.Blue) }},
+	{"black", func(c *render.Canvas, r image.Rectangle) { c.Rect(r, epaper.Black) }},
+}
+
+// ladderFor picks the ladder a palette can draw. Both blue and green, or
+// neither: a colour-bar ladder with a hole in it would be neither test.
+func ladderFor(p epaper.Palette) []ladder {
+	if hasColourBars(p) {
+		return colourBarLadder
+	}
+	return fourInkLadder
+}
+
+// hasColourBars reports whether a palette can draw the colour-bar elements.
+func hasColourBars(p epaper.Palette) bool {
+	return p.Has(epaper.Blue) && p.Has(epaper.Green)
+}
+
 func drawLadders(c *render.Canvas, l layout) {
+	ladderSteps := ladderFor(c.Palette())
 	seg := (l.ladderBottom - l.ladderTop) / len(ladderSteps)
 	if seg < 1 {
 		// No room for a seven-step ramp. Drawing it anyway inverts every

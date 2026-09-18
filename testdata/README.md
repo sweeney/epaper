@@ -1,8 +1,8 @@
 # testdata
 
-Fixtures captured from real hardware on 2026-09-14. Everything here was
-produced by the actual Pimoroni library talking to our actual board, so these
-are **oracles, not guesses**. If your code disagrees with a fixture, your code
+Fixtures captured from real hardware on 2026-09-14, and for each later board
+on the date in its row. Everything here was produced by the actual Pimoroni
+library talking to our actual boards, so these are **oracles, not guesses**. If your code disagrees with a fixture, your code
 is wrong.
 
 Regenerate with `tools/` — see §4.
@@ -28,6 +28,7 @@ offset  size  field
 |---|---|---|
 | `what-jd79668.bin` | **A real board.** `400x300`, colour 7 (`red/yellow`), pcb 100 (`v10.0`), variant 24 (`Red/Yellow wHAT (JD79668)`), written `2025-08-20 15:51:55.5` | decode all six fields exactly |
 | `phat-jd79661.bin` | **The other real board.** `250x122`, colour 7 (`red/yellow`), pcb 100 (`v10.0`), variant 23 (`Red/Yellow pHAT (JD79661)`), written `2026-04-15 23:32:34.2` | decode all six fields exactly, and route to a *different* driver |
+| `impression-e640.bin` | **The third real board**, captured 2026-09-25. `400x600`, colour 6 (`spectra6`), pcb 100 (`v10.0`), variant 25 (`Spectra 6 4.0 600 x 400 (E640)`), written `2026-04-19 07:18:51.9` | decode all six fields exactly — including the **portrait** geometry, which is the controller's frame, not the picture's; `inky` presents it as 600x400 |
 | `truncated.bin` | 12 bytes — a short read | return an error, **not** a zero-valued struct |
 | `zeroed.bin` | 29 × `0x00` — no EEPROM present | error: geometry `0x0` is impossible |
 | `ones.bin` | 29 × `0xFF` — floating bus, nothing ACKing | error: geometry `65535x65535` is impossible |
@@ -243,7 +244,7 @@ Only once (3) passes is it worth spending 20 seconds drawing it on the panel.
 
 ---
 
-## 3. `frame/` — the JD79661 frame-layout oracle
+## 3. `frame/` — the frame-layout oracles
 
 The JD79661 does not send its framebuffer row-major. It pads the panel's short
 axis from 122 to 128 and sends the result rotated a quarter turn, so the wire
@@ -275,6 +276,29 @@ Only the *layout* is pinned here. Dithering, quantisation and geometry are
 panel-independent and already covered by `conformance/`, which needs no second
 copy at another size.
 
+### The E640's
+
+| File | Size | What it is |
+|---|---|---|
+| `e640-frame.idx` | 240,000 B | one palette index per pixel, 0–5 in the order black, white, yellow, red, blue, green |
+| `e640-frame.bin` | 120,000 B | the packed framebuffer the **real vendor library** sent for it |
+| `e640-frame.png` | — | what the input looks like, for a human |
+
+The pattern is `(x*7 + y*3) % 6` with the corners forced to red, blue, yellow
+and green, clockwise from the top left — two of them the inks either side of
+the gap in the wire values.
+
+This one pins three things at once: the **remap** (palette index 4 is sent as
+5, index 5 as 6 — the controller skips 4), the **rotation** (a quarter turn
+clockwise, no padding), and the **nibble order** (two pixels a byte, high
+first). The capture goes through the vendor's `set_image()` so the remap is
+the vendor's, not ours; `tools/frame_e640.py` explains why quantising with
+Pillow is safe for this input, and checks that it was rather than assuming it.
+
+`driver/e640.TestFrameMatchesTheVendorOracle` asserts byte equality, and
+`TestVendorOracleUnpacksToTheOriginalPicture` checks the other direction with
+the remap written out independently.
+
 ---
 
 ## 4. `golden/` — render goldens
@@ -286,8 +310,9 @@ Regenerate with `make golden`. **Review the diff before committing**: a golden
 test that is regenerated without being looked at asserts nothing at all.
 
 The `panel-*` set is generated once per entry in `inky.SupportedPanels()` —
-the test card, the orientation card and the conformance pattern, at every
-resolution the library drives. That is deliberate, and it is how CI comes to
+the test card, the orientation card, the conformance pattern and the inks
+card, at every resolution the library drives, **in that panel's own
+palette**. That is deliberate, and it is how CI comes to
 render every panel: `make report` and the CI artifact display everything in
 this directory, so adding a driver adds its renders to the report without
 anyone remembering to.
@@ -328,11 +353,22 @@ ssh "$HOST" 'mkdir -p /tmp/fx && cd /tmp/fx && ~/inky-trial/venv/bin/python /tmp
 scp "$HOST":/tmp/fx/jd79661-frame.* testdata/frame/
 ```
 
-Both monkeypatch `_update` so **nothing touches SPI, GPIO or the panel** — they
-are safe to run and take about a second.
+`tools/frame_e640.py` rebuilds the E640's pair, with the **Impression**
+attached:
+
+```bash
+scp tools/frame_e640.py "$HOST":/tmp/
+ssh "$HOST" 'mkdir -p /tmp/fx && cd /tmp/fx && ~/inky-trial/venv/bin/python /tmp/frame_e640.py'
+scp "$HOST":/tmp/fx/e640-frame.* testdata/frame/
+```
+
+All three monkeypatch `_update` so **nothing touches SPI, GPIO or the panel** —
+they are safe to run and take about a second.
 
 On a fresh Pi the venv needs `python3-dev` before it will install: `spidev` has
-no aarch64 wheel and builds from source.
+no aarch64 wheel and builds from source. The frame tools never reach the code
+that imports `spidev`, so installing with `--no-deps` and leaving it out
+avoids that — how the E640 fixture was captured, `PLAN.md` §14.8.
 
 `tools/testcard_f_reference.py` is the four-ink Test Card F used during
 bring-up. It is a *visual* reference for what the library should be capable of,
@@ -344,6 +380,6 @@ with no hardware.
 ## 6. If a fixture and the hardware ever disagree
 
 Trust the hardware, re-capture, and write down what changed. These files record
-two boards at one moment each; a different board revision could legitimately
-differ — `what-jd79668.bin` and `phat-jd79661.bin` are *our* boards'
-serial-numbered records, not specifications.
+three boards at one moment each; a different board revision could legitimately
+differ — `what-jd79668.bin`, `phat-jd79661.bin` and `impression-e640.bin` are
+*our* boards' serial-numbered records, not specifications.

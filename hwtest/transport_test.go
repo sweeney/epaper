@@ -49,15 +49,19 @@ func TestI2CReadsTheEEPROM(t *testing.T) {
 	// are the ones that separate a real record from garbage.
 	//
 	// The per-board values are pinned where they belong, against captured
-	// fixtures, in inky.TestParseRealPHat and inky.TestParseEEPROMRealBoard.
+	// fixtures, in inky.TestParseEEPROMRealBoard, inky.TestParseRealPHat and
+	// inky.TestParseRealImpression.
 	if got.Width <= 0 || got.Height <= 0 {
 		t.Errorf("geometry = %dx%d, which is not a real panel", got.Width, got.Height)
 	}
 	if got.Model == "" {
 		t.Error("Model is empty; the display variant did not resolve")
 	}
-	if got.Colour != "red/yellow" {
-		t.Errorf("Colour = %q, want %q — all four-ink Inky boards report this", got.Colour, "red/yellow")
+	// Colour too, for the same reason, but only against the strings the
+	// supported boards actually carry: garbage decodes to an ink string that
+	// is in the vendor's table far more often than to one of these two.
+	if got.Colour != "red/yellow" && got.Colour != "spectra6" {
+		t.Errorf("Colour = %q, want a supported board's: \"red/yellow\" or \"spectra6\"", got.Colour)
 	}
 
 	// The board has to be one this library will actually drive, or every

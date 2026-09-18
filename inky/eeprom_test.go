@@ -78,6 +78,38 @@ func TestParseRealPHat(t *testing.T) {
 	}
 }
 
+// The third real board, captured from the Impression on 2026-09-25.
+//
+// The geometry is the surprise: 400x600, portrait. That is the controller's
+// frame, not the picture — the vendor ignores it and presents 600x400 — so
+// the EEPROM's geometry is not something every board can pass straight
+// through. TestOpenWithPresentsTheImpressionAsLandscape covers what is done
+// about it.
+func TestParseRealImpression(t *testing.T) {
+	got, err := inky.ParseEEPROM(fixture(t, "impression-e640.bin"))
+	if err != nil {
+		t.Fatalf("ParseEEPROM() error: %v", err)
+	}
+
+	for _, tc := range []struct {
+		field     string
+		got, want any
+	}{
+		{"Width", got.Width, 400},
+		{"Height", got.Height, 600},
+		{"Colour", got.Colour, "spectra6"},
+		{"DisplayVariant", int(got.DisplayVariant), 25},
+		{"Model", got.Model, "Spectra 6 4.0 600 x 400 (E640)"},
+		{"WriteTime", got.WriteTime, "2026-04-19 07:18:51.9"},
+		{"PCBVariant (raw)", int(got.PCBVariant), 100},
+		{"PCBRevision", got.PCBRevision(), "10.0"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.field, tc.got, tc.want)
+		}
+	}
+}
+
 // The two boards must not be confusable. Everything else about them matches —
 // same colour string, same PCB revision, same pin map — so the variant byte is
 // carrying the whole distinction on its own.

@@ -13,6 +13,7 @@ import (
 	"reflect"
 
 	"github.com/sweeney/epaper"
+	"github.com/sweeney/epaper/driver/e640"
 	"github.com/sweeney/epaper/driver/jd79661"
 	"github.com/sweeney/epaper/driver/jd79668"
 	"github.com/sweeney/epaper/internal/gpiocdev"
@@ -312,6 +313,20 @@ func realPHat() *EEPROM {
 	}
 }
 
+// realImpression is our Inky Impression 4.0"'s EEPROM record, decoded.
+// Captured from the board on 2026-09-25; the bytes are
+// testdata/eeprom/impression-e640.bin. Note the geometry: portrait, the
+// controller's frame, not the picture's.
+func realImpression() *EEPROM {
+	return &EEPROM{
+		Width: 400, Height: 600,
+		Colour: "spectra6", PCBVariant: 100,
+		DisplayVariant: variantSpectra6ImpressionE640,
+		Model:          "Spectra 6 4.0 600 x 400 (E640)",
+		WriteTime:      "2026-04-19 07:18:51.9",
+	}
+}
+
 // The EEPROM picks the controller driver. Both boards are "red/yellow" with
 // the same pin map and the same palette, so nothing downstream of here can
 // tell them apart — if the dispatch is wrong, the symptom is a panel that
@@ -325,6 +340,7 @@ func TestOpenWithDispatchesOnTheDisplayVariant(t *testing.T) {
 	}{
 		{"wHAT 4.2", realBoard(), image.Rect(0, 0, 400, 300), (*jd79668.Device)(nil)},
 		{"pHAT 2.13", realPHat(), image.Rect(0, 0, 250, 122), (*jd79661.Device)(nil)},
+		{"Impression 4.0", realImpression(), image.Rect(0, 0, 600, 400), (*e640.Device)(nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stubTransports(t, tc.info, nil)
@@ -374,31 +390,81 @@ func TestOpenWithPresentsThePHatAsLandscape(t *testing.T) {
 	}
 }
 
-// Options reach whichever driver was chosen, not just the first one.
-//
-// BusyTimeout is the one with a cheap observable: against a fake bus that
-// never reports ready, a driver that got the option gives up when told to, and
-// one that did not sits on the 40 s default.
-func TestOpenWithPassesOptionsToThePHatDriver(t *testing.T) {
-	o := stubTransports(t, realPHat(), nil)
-	o.bus.busy = []int{busyBusy} // never reports ready
+// The Impression's EEPROM says 400x600 — the controller's portrait frame — but
+// the picture is 600x400, the way the vendor presents it and the way the board
+// is labelled. Passing the EEPROM through unchanged would hand callers a
+// portrait canvas and a driver that rotates it a second time.
+func TestOpenWithPresentsTheImpressionAsLandscape(t *testing.T) {
+	stubTransports(t, realImpression(), nil)
 
-	dev, err := OpenWith(Options{BusyTimeout: 50 * time.Millisecond})
+	dev, err := OpenWith(Options{})
 	if err != nil {
 		t.Fatalf("OpenWith(): %v", err)
 	}
 	defer dev.Close()
 
-	started := time.Now()
-	err = dev.Show(context.Background(), dev.NewImage())
-	if err == nil {
-		t.Fatal("Show() = nil against a fake bus that never reports ready")
+	if got, want := dev.Bounds(), image.Rect(0, 0, 600, 400); got != want {
+		t.Errorf("Bounds() = %v, want %v — the EEPROM's portrait geometry leaked through", got, want)
 	}
-	if !errors.Is(err, ErrBusyTimeout) {
-		t.Errorf("Show() = %v, want ErrBusyTimeout", err)
+}
+
+// Six inks, and the two the red/yellow boards lack are what make it a
+// different panel rather than a bigger one.
+func TestOpenWithGivesTheImpressionSixInks(t *testing.T) {
+	stubTransports(t, realImpression(), nil)
+
+	dev, err := OpenWith(Options{})
+	if err != nil {
+		t.Fatalf("OpenWith(): %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
-		t.Errorf("Show() took %s to give up; the BusyTimeout option did not reach the driver", elapsed)
+	defer dev.Close()
+
+	p := dev.Palette()
+	if len(p) != 6 {
+		t.Errorf("palette has %d inks, want 6", len(p))
+	}
+	for _, ink := range []epaper.Ink{epaper.Blue, epaper.Green} {
+		if !p.Has(ink) {
+			t.Errorf("palette has no %s", ink)
+		}
+	}
+}
+
+// Options reach whichever driver was chosen, not just the first one.
+//
+// BusyTimeout is the one with a cheap observable: against a fake bus that
+// never reports ready, a driver that got the option gives up when told to, and
+// one that did not sits on the 40 s default.
+func TestOpenWithPassesOptionsToEveryDriver(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		info *EEPROM
+	}{
+		{"pHAT 2.13", realPHat()},
+		{"Impression 4.0", realImpression()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := stubTransports(t, tc.info, nil)
+			o.bus.busy = []int{busyBusy} // never reports ready
+
+			dev, err := OpenWith(Options{BusyTimeout: 50 * time.Millisecond})
+			if err != nil {
+				t.Fatalf("OpenWith(): %v", err)
+			}
+			defer dev.Close()
+
+			started := time.Now()
+			err = dev.Show(context.Background(), dev.NewImage())
+			if err == nil {
+				t.Fatal("Show() = nil against a fake bus that never reports ready")
+			}
+			if !errors.Is(err, ErrBusyTimeout) {
+				t.Errorf("Show() = %v, want ErrBusyTimeout", err)
+			}
+			if elapsed := time.Since(started); elapsed > 5*time.Second {
+				t.Errorf("Show() took %s to give up; the BusyTimeout option did not reach the driver", elapsed)
+			}
+		})
 	}
 }
 
@@ -417,6 +483,7 @@ func TestTheRealBoardsReachTheRightDrivers(t *testing.T) {
 	}{
 		{"what-jd79668.bin", (*jd79668.Device)(nil), image.Rect(0, 0, 400, 300)},
 		{"phat-jd79661.bin", (*jd79661.Device)(nil), image.Rect(0, 0, 250, 122)},
+		{"impression-e640.bin", (*e640.Device)(nil), image.Rect(0, 0, 600, 400)},
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("..", "testdata", "eeprom", tc.fixture))
@@ -469,6 +536,9 @@ func TestSupportedPanelsMatchesTheDispatch(t *testing.T) {
 		if p.Width <= 0 || p.Height <= 0 {
 			t.Errorf("%q is listed as %dx%d", p.Model, p.Width, p.Height)
 		}
+		if err := p.Palette.Validate(); err != nil {
+			t.Errorf("%q is listed with an unusable palette: %v", p.Model, err)
+		}
 		// The name must be the vendor's, not one invented here.
 		if int(v) >= len(displayVariants) || displayVariants[v] != p.Model {
 			t.Errorf("variant %d is listed as %q but the vendor table says %q",
@@ -488,31 +558,47 @@ func TestSupportedPanelsMatchesTheDispatch(t *testing.T) {
 	}
 }
 
-// The nominal geometry has to match what the real boards report, or a preview
-// rendered from SupportedPanels is not a preview of anything.
-func TestSupportedPanelGeometryMatchesTheRealEEPROMs(t *testing.T) {
-	for _, f := range []string{"what-jd79668.bin", "phat-jd79661.bin"} {
-		raw, err := os.ReadFile(filepath.Join("..", "testdata", "eeprom", f))
-		if err != nil {
-			t.Fatalf("reading fixture: %v", err)
-		}
-		info, err := ParseEEPROM(raw)
-		if err != nil {
-			t.Fatalf("ParseEEPROM(%s): %v", f, err)
-		}
-		var found bool
-		for _, p := range SupportedPanels() {
-			if p.DisplayVariant != info.DisplayVariant {
-				continue
+// The nominal geometry and palette have to match what Open actually presents
+// for the real boards, or a preview rendered from SupportedPanels is not a
+// preview of anything.
+//
+// This compares against the opened device rather than the raw EEPROM because
+// the two are not always the same: the Impression's EEPROM records its
+// controller's portrait 400x600, and the picture is 600x400.
+func TestSupportedPanelsMatchWhatTheRealBoardsOpenAs(t *testing.T) {
+	for _, f := range []string{"what-jd79668.bin", "phat-jd79661.bin", "impression-e640.bin"} {
+		t.Run(f, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "testdata", "eeprom", f))
+			if err != nil {
+				t.Fatalf("reading fixture: %v", err)
 			}
-			found = true
-			if p.Width != info.Width || p.Height != info.Height {
-				t.Errorf("%s: listed as %dx%d, the board reports %dx%d",
-					p.Model, p.Width, p.Height, info.Width, info.Height)
+			info, err := ParseEEPROM(raw)
+			if err != nil {
+				t.Fatalf("ParseEEPROM(%s): %v", f, err)
 			}
-		}
-		if !found {
-			t.Errorf("%s: variant %d is not in SupportedPanels", f, info.DisplayVariant)
-		}
+			stubTransports(t, info, nil)
+			dev, err := OpenWith(Options{})
+			if err != nil {
+				t.Fatalf("OpenWith(): %v", err)
+			}
+			defer dev.Close()
+
+			var found bool
+			for _, p := range SupportedPanels() {
+				if p.DisplayVariant != info.DisplayVariant {
+					continue
+				}
+				found = true
+				if got := image.Rect(0, 0, p.Width, p.Height); got != dev.Bounds() {
+					t.Errorf("%s: listed as %v, the board opens as %v", p.Model, got, dev.Bounds())
+				}
+				if !reflect.DeepEqual(p.Palette, dev.Palette()) {
+					t.Errorf("%s: listed palette %v, the board opens with %v", p.Model, p.Palette, dev.Palette())
+				}
+			}
+			if !found {
+				t.Errorf("variant %d is not in SupportedPanels", info.DisplayVariant)
+			}
+		})
 	}
 }

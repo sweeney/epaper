@@ -110,6 +110,7 @@ build:
 fuzz:
 	go test ./inky -run FuzzParseEEPROM -fuzz FuzzParseEEPROM -fuzztime $(FUZZTIME)
 	go test . -run FuzzPack -fuzz FuzzPack -fuzztime $(FUZZTIME)
+	go test ./driver/e640 -run FuzzFrame -fuzz FuzzFrame -fuzztime $(FUZZTIME)
 
 ## check: what CI runs — do this before pushing
 .PHONY: check
@@ -128,7 +129,7 @@ test-hw: require-host
 
 ## testcard: draw a pattern on the real panel — ~20 s of refresh
 #
-# PATTERN selects what to draw: testcard, orientation or conformance. The
+# PATTERN selects what to draw: testcard, orientation, conformance or inks. The
 # geometry is NOT a variable here — on real hardware the panel's EEPROM decides
 # it, and overriding it would draw something the panel cannot show. Use
 # testcard-png for other geometries.
